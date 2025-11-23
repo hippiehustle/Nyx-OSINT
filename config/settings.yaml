@@ -1,0 +1,54 @@
+debug: false
+data_dir: ./data
+config_dir: ./config
+
+database:
+  url: sqlite:///./nyx.db
+  pool_size: 20
+  max_overflow: 40
+  echo: false
+
+http:
+  timeout: 10
+  retries: 3
+  user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nyx/0.1.0
+  max_concurrent_requests: 100
+
+cache:
+  enabled: true
+  ttl: 3600
+  max_size: 1000
+  backend: memory
+
+gui:
+  theme: dark
+  window_width: 1400
+  window_height: 900
+  font_size: 10
+
+security:
+  enable_encryption: true
+  require_master_password: true
+  password_hash_iterations: 100000
+  session_timeout: 3600
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_path: logs/nyx.log
+  max_file_size: 10485760
+  backup_count: 5
+
+proxy:
+  enabled: false
+  http_proxy: null
+  https_proxy: null
+  socks_proxy: null
+
+tor:
+  enabled: false
+  socks_host: 127.0.0.1
+  socks_port: 9050
+  control_host: 127.0.0.1
+  control_port: 9051
+  use_new_identity: false

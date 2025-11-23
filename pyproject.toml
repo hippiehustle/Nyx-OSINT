@@ -1,0 +1,147 @@
+[tool.poetry]
+name = "nyx"
+version = "0.1.0"
+description = "Nyx (Net Yield Xtractor) - Professional OSINT Investigation Platform"
+authors = ["OSINT Development Team <nyx@osint.dev>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "nyx", from = "src"}]
+repository = "https://github.com/osint/nyx"
+documentation = "https://nyx-osint.readthedocs.io"
+keywords = ["osint", "investigation", "intelligence", "profile-building", "data-acquisition"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Law Enforcement",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet",
+    "Topic :: Security",
+    "Topic :: Utilities",
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+# Core async/HTTP
+aiohttp = "^3.9.0"
+httpx = "^0.24.0"
+
+# GUI
+customtkinter = "^5.2.0"
+pillow = "^10.0.0"
+
+# Database
+sqlalchemy = "^2.0.0"
+alembic = "^1.12.0"
+
+# Data Processing & Analysis
+pandas = "^2.1.0"
+numpy = "^1.26.0"
+pydantic = "^2.5.0"
+
+# Web Scraping
+beautifulsoup4 = "^4.12.0"
+lxml = "^4.9.0"
+playwright = "^1.40.0"
+
+# Image & Text Recognition
+pytesseract = "^0.3.10"
+opencv-python = "^4.8.0"
+
+# Phone Number Handling
+phonenumbers = "^8.13.0"
+
+# Export Formats
+jinja2 = "^3.1.0"
+reportlab = "^4.0.0"
+openpyxl = "^3.1.0"
+
+# Visualization & Maps
+matplotlib = "^3.7.0"
+plotly = "^5.17.0"
+folium = "^0.14.0"
+
+# Anonymity & Privacy
+stem = "^1.8.2"
+pysocks = "^1.7.1"
+
+# Utilities
+cryptography = "^41.0.0"
+python-dotenv = "^1.0.0"
+structlog = "^23.2.0"
+tqdm = "^4.66.0"
+colorama = "^0.4.6"
+cachetools = "^5.3.0"
+zstandard = "^0.21.0"
+faker = "^19.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1.0"
+pytest-mock = "^3.11.0"
+responses = "^0.23.0"
+black = "^23.9.0"
+isort = "^5.12.0"
+flake8 = "^6.0.0"
+mypy = "^1.5.0"
+bandit = "^1.7.5"
+
+[tool.poetry.scripts]
+nyx = "nyx.main:main"
+nyx-cli = "nyx.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | reference_tools
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_glob = ["*/migrations/*"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "--cov=src/nyx --cov-report=html --cov-report=term-missing"
