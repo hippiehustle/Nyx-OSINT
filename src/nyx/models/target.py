@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     DateTime,
     Integer,
     LargeBinary,
@@ -22,9 +23,9 @@ Base = declarative_base()
 profile_links = Table(
     "profile_links",
     Base.metadata,
-    mapped_column("source_profile_id", Integer, ForeignKey("target_profiles.id"), primary_key=True),
-    mapped_column("target_profile_id", Integer, ForeignKey("target_profiles.id"), primary_key=True),
-    mapped_column("relationship_type", String(50)),  # "same_person", "related_account", "verified", etc.
+    Column("source_profile_id", Integer, ForeignKey("target_profiles.id"), primary_key=True),
+    Column("target_profile_id", Integer, ForeignKey("target_profiles.id"), primary_key=True),
+    Column("relationship_type", String(50)),  # "same_person", "related_account", "verified", etc.
 )
 
 
