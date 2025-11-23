@@ -66,26 +66,66 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed information.
 
 ## Installation
 
-### Prerequisites
+### 🚀 Quick Start (Recommended)
+
+**Automated guided setup wizard handles everything for you!**
+
+#### Linux / macOS / WSL
+```bash
+# Make executable and run
+chmod +x setup.sh
+./setup.sh
+```
+
+#### Windows (PowerShell)
+```powershell
+# Run as Administrator (recommended)
+.\setup.ps1
+```
+
+The setup wizard will:
+- ✅ Detect and install Python 3.12+
+- ✅ Install Poetry dependency manager
+- ✅ Configure environment variables
+- ✅ Install all dependencies (including Playwright browsers)
+- ✅ Initialize database
+- ✅ Verify installation
+- ✅ Provide detailed setup logs
+
+**See [QUICKSTART.md](QUICKSTART.md) for a quick reference or [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for detailed instructions.**
+
+---
+
+### Manual Installation
+
+If you prefer manual setup:
+
+#### Prerequisites
 - Python 3.12+
 - Poetry (dependency management)
-- Tesseract-OCR (for image text recognition)
+- Tesseract-OCR (optional, for image text recognition)
 
-### Setup
+#### Steps
 
 ```bash
 # Clone or download the project
-cd Nyx
+cd Nyx-OSINT
+
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
 
 # Install dependencies with Poetry
 poetry install
 
 # Copy configuration template
+cp .env.example .env
 cp config/settings.yaml config/settings.local.yaml
-cp .env.example .env.local
 
-# Edit configuration as needed
-nano config/settings.local.yaml
+# Initialize database
+poetry run python -c "from nyx.core.database import initialize_database; import asyncio; asyncio.run(initialize_database())"
+
+# Verify installation
+poetry run nyx-cli --version
 ```
 
 ## Usage
