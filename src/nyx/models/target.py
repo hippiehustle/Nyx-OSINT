@@ -92,7 +92,7 @@ class TargetProfile(Base):
 
     # Raw and extended data
     raw_data: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
-    metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    profile_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
 
     # Verification and confidence
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
