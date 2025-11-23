@@ -10,6 +10,8 @@ from nyx.config.base import load_config
 from nyx.core.logger import setup_logging, get_logger
 from nyx.osint.platforms import get_platform_database
 from nyx.osint.search import SearchService
+from nyx.intelligence.email import EmailIntelligence
+from nyx.intelligence.phone import PhoneIntelligence
 
 logger = get_logger(__name__)
 
@@ -129,6 +131,72 @@ def stats(ctx):
     click.echo(f"Active Platforms: {stats['active_platforms']}")
     click.echo(f"NSFW Platforms: {stats['nsfw_platforms']}")
     click.echo(f"SFW Platforms: {stats['sfw_platforms']}")
+
+
+@cli.command()
+@click.argument("email")
+@click.pass_context
+def email(ctx, email):
+    """Investigate email address."""
+
+    async def async_email_check():
+        email_intel = EmailIntelligence()
+        result = await email_intel.investigate(email)
+
+        click.echo(f"\nEmail Intelligence Report: {email}")
+        click.echo("=" * 80)
+        click.echo(f"Valid Format: {'✓' if result.valid else '✗'}")
+        click.echo(f"Exists: {'✓' if result.exists else '✗'}")
+        click.echo(f"Disposable: {'✓' if result.disposable else '✗'}")
+        click.echo(f"Breached: {'✓' if result.breached else '✗'}")
+
+        if result.breached:
+            click.echo(f"Breach Count: {result.breach_count}")
+            click.echo(f"Breaches: {', '.join(result.breaches)}")
+
+        if result.providers:
+            click.echo(f"Providers/Services: {', '.join(result.providers)}")
+
+        click.echo(f"Reputation Score: {result.reputation_score:.1f}/100")
+        click.echo(f"Checked At: {result.checked_at}")
+
+    asyncio.run(async_email_check())
+
+
+@cli.command()
+@click.argument("phone")
+@click.option("-r", "--region", help="Region code (e.g., US)", type=str)
+@click.pass_context
+def phone(ctx, phone, region):
+    """Investigate phone number."""
+
+    async def async_phone_check():
+        phone_intel = PhoneIntelligence()
+        result = await phone_intel.investigate(phone, region)
+
+        click.echo(f"\nPhone Intelligence Report: {phone}")
+        click.echo("=" * 80)
+        click.echo(f"Valid: {'✓' if result.valid else '✗'}")
+
+        if result.valid:
+            click.echo(f"Country: {result.country_name} ({result.country_code})")
+            click.echo(f"Location: {result.location or 'Unknown'}")
+            click.echo(f"Carrier: {result.carrier or 'Unknown'}")
+            click.echo(f"Line Type: {result.line_type}")
+            click.echo(f"Timezones: {', '.join(result.timezones)}")
+            click.echo(f"\nFormatted:")
+            click.echo(f"  International: {result.formatted_international}")
+            click.echo(f"  National: {result.formatted_national}")
+            click.echo(f"  E164: {result.formatted_e164}")
+            click.echo(f"Reputation Score: {result.reputation_score:.1f}/100")
+
+            if result.metadata.get("social_platforms"):
+                platforms = result.metadata["social_platforms"]
+                click.echo(f"Social Platforms: {', '.join(platforms)}")
+
+        click.echo(f"Checked At: {result.checked_at}")
+
+    asyncio.run(async_phone_check())
 
 
 def main():

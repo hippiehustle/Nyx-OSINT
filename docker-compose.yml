@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  nyx-cli:
+    build: .
+    container_name: nyx-cli
+    command: poetry run nyx-cli --help
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./exports:/app/exports
+      - ./config:/app/config
+    environment:
+      - DISPLAY=${DISPLAY}
+    networks:
+      - nyx-network
+
+  nyx-gui:
+    build: .
+    container_name: nyx-gui
+    command: poetry run nyx
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./exports:/app/exports
+      - ./config:/app/config
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
+    networks:
+      - nyx-network
+    # For GUI access
+    privileged: true
+
+  nyx-postgres:
+    image: postgres:15-alpine
+    container_name: nyx-postgres
+    environment:
+      POSTGRES_DB: nyx
+      POSTGRES_USER: nyx
+      POSTGRES_PASSWORD: nyx_secure_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - nyx-network
+    restart: unless-stopped
+
+  tor-proxy:
+    image: dperson/torproxy
+    container_name: nyx-tor
+    ports:
+      - "9050:9050"
+      - "9051:9051"
+    networks:
+      - nyx-network
+    restart: unless-stopped
+
+networks:
+  nyx-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
