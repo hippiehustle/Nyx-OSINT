@@ -2,7 +2,10 @@
 
 from typing import Dict, List, Optional
 
+from nyx.core.logger import get_logger
 from nyx.models.platform import Platform, PlatformCategory
+
+logger = get_logger(__name__)
 
 
 class PlatformDatabase:
