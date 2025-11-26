@@ -172,42 +172,60 @@ class StatusCodeChecker(BasePlatformChecker):
         Returns:
             True if likely a real profile, False if likely a false positive
         """
-        # Check 1: Verify the final URL contains the username or is the same as original
         final_url = str(response.url)
         final_path = urlparse(final_url).path.lower()
         original_path = urlparse(original_url).path.lower()
         username_lower = username.lower()
 
-        # If redirected to a completely different path without username, likely false positive
-        if final_path != original_path and username_lower not in final_path:
-            # Check if redirected to root/homepage
-            if final_path in ['/', '/index.html', '/home', '']:
-                return False
-
-        # Check 2: Look for false positive patterns in response text (case-insensitive)
-        try:
-            content_lower = response.text.lower()
-            for pattern in self.FALSE_POSITIVE_PATTERNS:
-                if re.search(pattern, content_lower, re.IGNORECASE):
-                    # If we find signup/login/not found indicators, likely false positive
-                    # But only if username is NOT also present (could be a real profile with these words)
-                    if username_lower not in content_lower:
-                        return False
-        except Exception:
-            # If we can't read the content, continue with other checks
-            pass
-
-        # Check 3: Verify response is not just the platform homepage/root
-        # If the final URL is the root domain without the username path, it's a false positive
+        # CRITICAL CHECK: Detect homepage/root redirects
+        # If we requested a profile URL but got redirected to just the homepage, it's a false positive
         parsed_original = urlparse(original_url)
         parsed_final = urlparse(final_url)
 
-        # If original had a path with username, but final is just domain root
-        if parsed_original.path and parsed_original.path not in ['/', '']:
-            if parsed_final.path in ['/', '', '/index.html', '/home']:
+        # Check if original URL had a meaningful path (with username) but final is just root
+        original_has_path = parsed_original.path and parsed_original.path not in ['/', '']
+        final_is_root = parsed_final.path in ['/', '', '/index.html', '/home', '/index', '/index.php']
+
+        if original_has_path and final_is_root:
+            # Redirected from /users/username to just / - definitely a false positive
+            logger.debug(f"False positive detected: {self.platform.name} - redirected to homepage")
+            return False
+
+        # SECONDARY CHECK: If redirected to a different path, verify username is still in the URL
+        if final_path != original_path:
+            # Only reject if BOTH conditions are true:
+            # 1. Username is not in the final path
+            # 2. Final path is the root/homepage
+            if username_lower not in final_path and final_is_root:
+                logger.debug(f"False positive detected: {self.platform.name} - no username in redirect to root")
                 return False
 
-        # Passed all validation checks
+        # OPTIONAL CHECK: Look for strong "not found" indicators in content
+        # Only check for very obvious false positives, don't be too aggressive
+        try:
+            content_lower = response.text.lower()
+
+            # Only reject if we find STRONG indicators that this is not a profile
+            strong_false_positive_patterns = [
+                r'user.?not.?found',
+                r'profile.?not.?found',
+                r'account.?not.?found',
+                r'page.?not.?found',
+                r'error.?404',
+            ]
+
+            for pattern in strong_false_positive_patterns:
+                if re.search(pattern, content_lower, re.IGNORECASE):
+                    # Only reject if the username is NOT in the content at all
+                    # (if username is present, might be a valid profile with these words)
+                    if username_lower not in content_lower:
+                        logger.debug(f"False positive detected: {self.platform.name} - 'not found' in content")
+                        return False
+        except Exception:
+            # If we can't read content, don't reject - better to have false positives than miss real profiles
+            pass
+
+        # Passed validation - likely a real profile
         return True
 
 
