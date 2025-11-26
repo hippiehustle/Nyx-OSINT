@@ -149,9 +149,15 @@ class StatusCodeChecker(BasePlatformChecker):
             found = response.status_code == 200
 
         # Additional validation for 200 responses to reduce false positives
+        # Only validate if we have a 200 status code
         if found and response.status_code == 200:
-            found = self._validate_profile_page(response, username, url)
+            validated = self._validate_profile_page(response, username, url)
+            if not validated:
+                logger.debug(f"{self.platform.name}: Validation rejected {url}")
+            found = validated
 
+        # Return the original URL (what we requested), not the final redirected URL
+        # This ensures we always show the platform's profile URL format
         return {
             "username": username,
             "platform": self.platform.name,

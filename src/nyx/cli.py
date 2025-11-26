@@ -155,8 +155,8 @@ def cli(ctx, config, debug):
 @click.option(
     "-t", "--timeout",
     type=int,
-    default=30,
-    help="Search timeout in seconds (default: 30)",
+    default=120,
+    help="Search timeout in seconds (default: 120)",
     metavar="SECONDS",
     show_default=True,
 )

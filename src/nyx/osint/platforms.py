@@ -3971,7 +3971,8 @@ class PlatformDatabase:
         loaded_count = 0
 
         # Get the data directory path
-        data_dir = Path(__file__).parent.parent.parent / "data" / "platforms"
+        # From: src/nyx/osint/platforms.py -> project_root/data/platforms
+        data_dir = Path(__file__).parent.parent.parent.parent / "data" / "platforms"
 
         if not data_dir.exists():
             logger.warning(f"Platform data directory not found: {data_dir}")
