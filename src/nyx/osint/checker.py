@@ -197,6 +197,14 @@ class StatusCodeChecker(BasePlatformChecker):
             logger.debug(f"False positive detected: {self.platform.name} - redirected to homepage")
             return False
 
+        # ENHANCED CHECK: Username must appear in final URL path or query string
+        # This catches cases where we get 200 OK but no user-specific URL
+        final_full_url = final_url.lower()
+        if username_lower not in final_full_url:
+            # Username not in URL at all - likely a false positive
+            logger.debug(f"False positive detected: {self.platform.name} - username not in final URL")
+            return False
+
         # SECONDARY CHECK: If redirected to a different path, verify username is still in the URL
         if final_path != original_path:
             # Only reject if BOTH conditions are true:

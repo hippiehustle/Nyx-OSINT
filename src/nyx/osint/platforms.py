@@ -114,6 +114,14 @@ class PlatformDatabase:
         """
         count = 0
         for name, data in platforms_dict.items():
+            # Skip metadata entries (NOTE, PLATFORM_COUNT_INFO, etc.)
+            if not isinstance(data, dict):
+                continue
+
+            # Skip entries that don't have required fields
+            if not data.get("url") or not data.get("search_url"):
+                continue
+
             category = data.get("category", PlatformCategory.OTHER)
             if isinstance(category, str):
                 try:

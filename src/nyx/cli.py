@@ -333,6 +333,10 @@ def _search_username(
     async def async_search():
         import sys
 
+        # Enable debug logging if verbose mode
+        if verbose:
+            logging.getLogger("nyx.osint.checker").setLevel(logging.DEBUG)
+
         search_service = SearchService()
 
         # Parse platforms if provided
@@ -397,16 +401,40 @@ def _search_username(
         total_platforms[0] = len(platforms_dict)
         click.echo(f"🔎 Searching {total_platforms[0]} platforms...\n")
 
-        results = await search_service.search_username(
-            username=username,
-            platforms=platform_list,
-            categories=category_list,
-            exclude_nsfw=nsfw_filter,
-            timeout=timeout,
-        )
+        # Create animated progress indicator
+        import threading
+        import itertools
+
+        stop_spinner = threading.Event()
+        spinner_chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+
+        def spin():
+            """Display animated spinner while search is running."""
+            while not stop_spinner.is_set():
+                char = next(spinner_chars)
+                sys.stdout.write(f'\r{char} Searching {total_platforms[0]} platforms... {checked_count[0]} checked, {found_count[0]} found')
+                sys.stdout.flush()
+                stop_spinner.wait(0.1)
+
+        # Start spinner in background thread
+        spinner_thread = threading.Thread(target=spin, daemon=True)
+        spinner_thread.start()
+
+        try:
+            results = await search_service.search_username(
+                username=username,
+                platforms=platform_list,
+                categories=category_list,
+                exclude_nsfw=nsfw_filter,
+                timeout=timeout,
+            )
+        finally:
+            # Stop spinner
+            stop_spinner.set()
+            spinner_thread.join(timeout=0.5)
 
         # Clear progress line
-        click.echo("\r" + " " * 80 + "\r", nl=False)
+        click.echo("\r" + " " * 100 + "\r", nl=False)
 
         if not results:
             click.echo("❌ No profiles found")
