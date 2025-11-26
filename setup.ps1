@@ -730,6 +730,9 @@ function Test-Installation {
     else {
         Write-Host "✗ CRITICAL" -ForegroundColor Red
         $failedChecks += "CLI command failed"
+        if ($ShowVerbose) {
+            Write-Host "    Error output: $cliTest" -ForegroundColor DarkGray
+        }
     }
 
     # Check 3: Configuration
@@ -781,6 +784,15 @@ function Test-Installation {
         foreach ($check in $failedChecks) {
             Write-Host "    - $check" -ForegroundColor White
         }
+        Write-Host ""
+        Write-Host "  Troubleshooting:" -ForegroundColor Cyan
+        if ($failedChecks -contains "CLI command failed") {
+            Write-Host "    - Try running: poetry run nyx-cli --version" -ForegroundColor Gray
+            Write-Host "    - Check if Poetry virtual environment is active" -ForegroundColor Gray
+            Write-Host "    - Verify entry points in pyproject.toml" -ForegroundColor Gray
+        }
+        Write-Host "    - Run with -ShowVerbose flag for detailed error output" -ForegroundColor Gray
+        Write-Host "    - Check setup.log for complete details" -ForegroundColor Gray
         Write-Host ""
         Write-Host "  The installation is incomplete. Please check the errors above." -ForegroundColor Yellow
         Write-Host "  Most common issue: Wrong Python version (need 3.12, not 3.14)" -ForegroundColor Yellow
