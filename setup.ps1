@@ -9,7 +9,7 @@
 .PARAMETER Auto
     Run in automated mode without prompts
 
-.PARAMETER Verbose
+.PARAMETER ShowVerbose
     Enable verbose output for debugging
 
 .PARAMETER SkipDeps
@@ -26,7 +26,7 @@
     Run interactive setup
 
 .EXAMPLE
-    .\setup.ps1 -Auto -Verbose
+    .\setup.ps1 -Auto -ShowVerbose
     Run automated setup with verbose output
 
 .NOTES
@@ -37,7 +37,7 @@
 [CmdletBinding()]
 param(
     [switch]$Auto,
-    [switch]$Verbose,
+    [switch]$ShowVerbose,
     [switch]$SkipDeps,
     [switch]$SkipDb,
     [string]$Config = ""
@@ -109,9 +109,9 @@ function Write-Fatal {
     exit 1
 }
 
-function Write-Verbose {
+function Write-VerboseLog {
     param([string]$Message)
-    if ($Verbose) {
+    if ($ShowVerbose) {
         Write-Host "[VERBOSE] " -ForegroundColor Cyan -NoNewline
         Write-Host $Message
         Write-Log "VERBOSE: $Message"
@@ -140,7 +140,7 @@ function Write-ProgressBar {
 function Add-RollbackStep {
     param([scriptblock]$Step)
     $script:ROLLBACK_STEPS += $Step
-    Write-Verbose "Added rollback step"
+    Write-VerboseLog "Added rollback step"
 }
 
 function Invoke-Cleanup {
@@ -148,11 +148,11 @@ function Invoke-Cleanup {
 
     for ($i = $script:ROLLBACK_STEPS.Count - 1; $i -ge 0; $i--) {
         try {
-            Write-Verbose "Executing rollback step $($i + 1)"
+            Write-VerboseLog "Executing rollback step $($i + 1)"
             & $script:ROLLBACK_STEPS[$i]
         }
         catch {
-            Write-Verbose "Rollback step failed: $_"
+            Write-VerboseLog "Rollback step failed: $_"
         }
     }
 
@@ -391,7 +391,7 @@ function New-ProjectDirectories {
         $fullPath = Join-Path $SCRIPT_DIR $dir
         if (-not (Test-Path $fullPath)) {
             New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
-            Write-Verbose "Created directory: $dir"
+            Write-VerboseLog "Created directory: $dir"
             Add-RollbackStep { Remove-Item -Path $fullPath -Recurse -Force -ErrorAction SilentlyContinue }
         }
     }
@@ -421,7 +421,7 @@ function New-EnvironmentFile {
 
     if (Test-Path $envExample) {
         Copy-Item $envExample $envFile
-        Write-Verbose "Copied .env.example to .env"
+        Write-VerboseLog "Copied .env.example to .env"
     }
     else {
         # Create default .env
@@ -446,7 +446,7 @@ NYX_CACHE_MAX_SIZE=1000
 NYX_LOGGING_LEVEL=INFO
 NYX_LOGGING_FILE_PATH=logs/nyx.log
 "@ | Out-File -FilePath $envFile -Encoding UTF8
-        Write-Verbose "Created default .env file"
+        Write-VerboseLog "Created default .env file"
     }
 
     # Interactive configuration
@@ -505,10 +505,10 @@ function Install-Dependencies {
     try {
         # Configure Poetry
         poetry config virtualenvs.in-project true
-        Write-Verbose "Configured Poetry to use local virtualenv"
+        Write-VerboseLog "Configured Poetry to use local virtualenv"
 
         # Install dependencies
-        if ($Verbose) {
+        if ($ShowVerbose) {
             poetry install
         }
         else {
