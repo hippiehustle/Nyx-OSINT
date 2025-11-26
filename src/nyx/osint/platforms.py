@@ -66,6 +66,7 @@ class PlatformDatabase:
             exists_pattern=exists_pattern,
             not_exists_pattern=not_exists_pattern,
             is_nsfw=is_nsfw,
+            is_active=True,  # Explicitly set active for in-memory objects
             requires_login=requires_login,
             requires_proxy=requires_proxy,
             timeout=timeout,
