@@ -6,7 +6,7 @@ from typing import Optional
 
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
 class EncryptionManager:
@@ -22,7 +22,7 @@ class EncryptionManager:
 
     def _derive_cipher(self, password: str) -> Fernet:
         """Derive Fernet cipher from master password using PBKDF2."""
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=self.salt,
