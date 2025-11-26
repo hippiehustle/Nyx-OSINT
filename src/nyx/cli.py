@@ -412,14 +412,10 @@ def _search_username(
             """Show search progress in a user-friendly way."""
             if status == "checking":
                 checked_count[0] += 1
-                # Show a simple progress indicator
-                if checked_count[0] == 1 or checked_count[0] % 10 == 0 or status == "found":
-                    click.echo(f"⏳ Checking {checked_count[0]}/{total_platforms[0]} platforms...", nl=False)
-                    click.echo("\r", nl=False)
-                    sys.stdout.flush()
             elif status == "found":
                 found_count[0] += 1
-                click.echo(f"✓ Found on {platform_name}" + " " * 30)
+            elif status == "cached":
+                checked_count[0] += 1
 
         # Count total platforms that will be searched
         from nyx.osint.platforms import get_platform_database
@@ -465,6 +461,7 @@ def _search_username(
                 categories=category_list,
                 exclude_nsfw=nsfw_filter,
                 timeout=timeout,
+                progress_callback=show_progress,
             )
         finally:
             # Stop spinner

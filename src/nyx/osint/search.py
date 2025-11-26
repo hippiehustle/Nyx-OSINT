@@ -106,6 +106,7 @@ class SearchService:
         categories: Optional[List[str]] = None,
         exclude_nsfw: bool = False,
         timeout: Optional[int] = None,
+        progress_callback: Optional[callable] = None,
     ) -> Dict[str, PlatformMatch]:
         """Search for username across platforms.
 
@@ -115,6 +116,7 @@ class SearchService:
             categories: Categories to search (None = all)
             exclude_nsfw: Exclude NSFW platforms
             timeout: Overall search timeout in seconds
+            progress_callback: Optional callback for progress updates (platform_name, status)
 
         Returns:
             Dictionary of results keyed by platform name
@@ -138,7 +140,7 @@ class SearchService:
 
         # Create tasks for all platform checks
         tasks = [
-            self._check_platform(platform, username)
+            self._check_platform(platform, username, progress_callback=progress_callback)
             for platform in platforms_to_search.values()
         ]
 
