@@ -17,7 +17,7 @@ from nyx.intelligence.phone import PhoneIntelligence
 logger = get_logger(__name__)
 
 
-@click.group()
+@click.group(invoke_without_command=True)
 @click.version_option(version=__version__, prog_name="nyx-cli")
 @click.option("-c", "--config", help="Configuration file path", type=str)
 @click.option("-d", "--debug", help="Enable debug mode", is_flag=True)
@@ -28,13 +28,24 @@ def cli(ctx, config, debug):
     ctx.obj["config_path"] = config
     ctx.obj["debug"] = debug
 
-    # Load configuration and setup logging
-    cfg = load_config(config)
-    setup_logging(
-        level="DEBUG" if debug else cfg.logging.level,
-        log_file=cfg.logging.file_path,
-    )
-    ctx.obj["config"] = cfg
+    # Only load config if a subcommand will be invoked
+    # This allows --version and --help to work without config files
+    if ctx.invoked_subcommand is not None:
+        # Load configuration and setup logging
+        try:
+            cfg = load_config(config)
+            setup_logging(
+                level="DEBUG" if debug else cfg.logging.level,
+                log_file=cfg.logging.file_path,
+            )
+            ctx.obj["config"] = cfg
+        except Exception as e:
+            click.echo(f"Error loading configuration: {e}", err=True)
+            click.echo("Run with a valid configuration or create default config files.", err=True)
+            sys.exit(1)
+    elif ctx.invoked_subcommand is None and not ctx.resilient_parsing:
+        # No subcommand provided, show help
+        click.echo(ctx.get_help())
 
 
 @cli.command()

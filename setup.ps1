@@ -594,12 +594,28 @@ function Install-PlaywrightBrowsers {
         try {
             $playwrightOutput = poetry run playwright install chromium 2>&1 | Out-String
 
-            if ($LASTEXITCODE -eq 0 -and $playwrightOutput -match "(Downloaded|chromium)") {
-                Write-Success "Playwright browsers installed"
-                return $true
+            if ($ShowVerbose) {
+                Write-Host "  Playwright output:" -ForegroundColor Gray
+                Write-Host $playwrightOutput -ForegroundColor DarkGray
+            }
+
+            # Check for success indicators: exit code 0 and no critical errors
+            # Playwright may show warnings but still succeed
+            if ($LASTEXITCODE -eq 0) {
+                # Check for failure keywords
+                if ($playwrightOutput -match "(Failed|Error|Cannot)") {
+                    Write-Warning "Playwright installation completed with warnings"
+                    Write-Host "  Output: $($playwrightOutput.Substring(0, [Math]::Min(200, $playwrightOutput.Length)))..." -ForegroundColor Yellow
+                    Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
+                    return $false
+                }
+                else {
+                    Write-Success "Playwright browsers installed"
+                    return $true
+                }
             }
             else {
-                Write-Warning "Playwright installation may have failed"
+                Write-Warning "Playwright installation may have failed (exit code: $LASTEXITCODE)"
                 if ($ShowVerbose) {
                     Write-Host $playwrightOutput -ForegroundColor Yellow
                 }
