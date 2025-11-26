@@ -590,41 +590,96 @@ function Install-Dependencies {
 function Install-PlaywrightBrowsers {
     if (Read-YesNo "Install Playwright browser dependencies for web scraping?" $true) {
         Write-Info "Installing Playwright browsers (downloading ~200MB)..."
+        Write-Host "  This may take several minutes depending on your connection..." -ForegroundColor Gray
 
         try {
-            $playwrightOutput = poetry run playwright install chromium 2>&1 | Out-String
-
-            if ($ShowVerbose) {
-                Write-Host "  Playwright output:" -ForegroundColor Gray
-                Write-Host $playwrightOutput -ForegroundColor DarkGray
+            # First verify Playwright package is installed
+            Write-VerboseLog "Verifying Playwright package installation"
+            $playwrightCheck = poetry run python -c "import playwright; print('OK')" 2>&1 | Out-String
+            if ($playwrightCheck -notmatch "OK") {
+                Write-Warning "Playwright package not found in environment"
+                Write-Host "  Run: poetry install" -ForegroundColor Gray
+                Write-Host "  Web scraping features will be limited" -ForegroundColor Yellow
+                return $false
             }
 
-            # Check for success indicators: exit code 0 and no critical errors
-            # Playwright may show warnings but still succeed
-            if ($LASTEXITCODE -eq 0) {
-                # Check for failure keywords
-                if ($playwrightOutput -match "(Failed|Error|Cannot)") {
-                    Write-Warning "Playwright installation completed with warnings"
-                    Write-Host "  Output: $($playwrightOutput.Substring(0, [Math]::Min(200, $playwrightOutput.Length)))..." -ForegroundColor Yellow
-                    Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
-                    return $false
+            # Install chromium browser with retry logic
+            $maxRetries = 2
+            $retryCount = 0
+            $installSuccess = $false
+
+            while ($retryCount -le $maxRetries -and -not $installSuccess) {
+                if ($retryCount -gt 0) {
+                    Write-Host "  Retry attempt $retryCount of $maxRetries..." -ForegroundColor Yellow
+                    Start-Sleep -Seconds 2
                 }
-                else {
-                    Write-Success "Playwright browsers installed"
-                    return $true
+
+                $playwrightOutput = poetry run playwright install chromium 2>&1 | Out-String
+                $exitCode = $LASTEXITCODE
+
+                if ($ShowVerbose) {
+                    Write-Host "  Playwright output:" -ForegroundColor Gray
+                    Write-Host $playwrightOutput -ForegroundColor DarkGray
                 }
+
+                # Check for success
+                if ($exitCode -eq 0) {
+                    # Look for success indicators
+                    if ($playwrightOutput -match "(downloaded|chromium|successfully|Installing|✔)") {
+                        # Check for critical errors
+                        if ($playwrightOutput -match "(FAILED|ERROR:.*failed|Cannot download)") {
+                            Write-VerboseLog "Found error keywords in output"
+                            $retryCount++
+                            continue
+                        }
+
+                        $installSuccess = $true
+                        break
+                    }
+                    elseif ($playwrightOutput -match "Chromium.*is already installed") {
+                        Write-VerboseLog "Chromium already installed"
+                        $installSuccess = $true
+                        break
+                    }
+                    else {
+                        Write-VerboseLog "Ambiguous output, checking manually"
+                        # Verify by checking if chromium is available
+                        $verifyOutput = poetry run playwright install --dry-run chromium 2>&1 | Out-String
+                        if ($verifyOutput -match "is already installed") {
+                            $installSuccess = $true
+                            break
+                        }
+                    }
+                }
+
+                $retryCount++
+            }
+
+            if ($installSuccess) {
+                Write-Success "Playwright browsers installed and verified"
+                return $true
             }
             else {
-                Write-Warning "Playwright installation may have failed (exit code: $LASTEXITCODE)"
-                if ($ShowVerbose) {
-                    Write-Host $playwrightOutput -ForegroundColor Yellow
+                Write-Warning "Playwright installation completed but verification uncertain"
+                if (-not $ShowVerbose) {
+                    Write-Host "  Last output: $($playwrightOutput.Substring(0, [Math]::Min(300, $playwrightOutput.Length)))..." -ForegroundColor Yellow
                 }
+                Write-Host ""
+                Write-Host "  Common issues:" -ForegroundColor Yellow
+                Write-Host "    - Network connectivity problems" -ForegroundColor White
+                Write-Host "    - Firewall/antivirus blocking download" -ForegroundColor White
+                Write-Host "    - Insufficient disk space" -ForegroundColor White
+                Write-Host ""
+                Write-Host "  To retry manually:" -ForegroundColor Cyan
+                Write-Host "    poetry run playwright install chromium" -ForegroundColor Gray
+                Write-Host ""
                 Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
                 return $false
             }
         }
         catch {
             Write-Warning "Failed to install Playwright browsers: $_"
+            Write-Host "  To retry manually: poetry run playwright install chromium" -ForegroundColor Gray
             Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
             return $false
         }
