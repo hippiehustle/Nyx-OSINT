@@ -1,14 +1,23 @@
 """Base platform checker implementation."""
 
 import asyncio
+import logging
+import re
 import time
 from abc import ABC, abstractmethod
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 
+from nyx.core.logger import get_logger
 from nyx.core.types import PlatformMatch
 from nyx.models.platform import Platform, PlatformResult
+
+# Silence httpx INFO logging
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = get_logger(__name__)
 
 
 class BasePlatformChecker(ABC):
@@ -46,12 +55,13 @@ class BasePlatformChecker(ABC):
         """
         pass
 
-    async def _request(self, url: str, method: str = "GET", **kwargs) -> Optional[httpx.Response]:
+    async def _request(self, url: str, method: str = "GET", follow_redirects: bool = True, **kwargs) -> Optional[httpx.Response]:
         """Make HTTP request with retries.
 
         Args:
             url: Request URL
             method: HTTP method
+            follow_redirects: Whether to follow redirects
             **kwargs: Additional request arguments
 
         Returns:
@@ -64,7 +74,7 @@ class BasePlatformChecker(ABC):
 
         for attempt in range(self.retries):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=follow_redirects) as client:
                     response = await client.request(method, url, headers=headers, **kwargs)
                     return response
             except asyncio.TimeoutError:
@@ -101,8 +111,17 @@ class BasePlatformChecker(ABC):
 class StatusCodeChecker(BasePlatformChecker):
     """Check platform by HTTP status code."""
 
+    # Common false positive indicators
+    FALSE_POSITIVE_PATTERNS = [
+        r'(sign.?up|register|join|create.?account)',  # Signup/registration pages
+        r'(log.?in|sign.?in|auth|login)',  # Login pages
+        r'(404|not.?found|does.?not.?exist)',  # Error messages
+        r'(user.?not.?found|profile.?not.?found|no.?user)',  # User not found
+        r'(search.?results|browse|explore)',  # Search/browse pages
+    ]
+
     async def check(self, username: str) -> Optional[PlatformMatch]:
-        """Check username by status code.
+        """Check username by status code with false positive detection.
 
         Args:
             username: Username to search for
@@ -113,7 +132,7 @@ class StatusCodeChecker(BasePlatformChecker):
         url = self.platform.search_url.format(username=username)
 
         start_time = time.time()
-        response = await self._request(url)
+        response = await self._request(url, follow_redirects=True)
         response_time = time.time() - start_time
 
         if not response:
@@ -129,6 +148,16 @@ class StatusCodeChecker(BasePlatformChecker):
             # Default: 200 = found, 404 = not found
             found = response.status_code == 200
 
+        # Additional validation for 200 responses to reduce false positives
+        # Only validate if we have a 200 status code
+        if found and response.status_code == 200:
+            validated = self._validate_profile_page(response, username, url)
+            if not validated:
+                logger.debug(f"{self.platform.name}: Validation rejected {url}")
+            found = validated
+
+        # Return the original URL (what we requested), not the final redirected URL
+        # This ensures we always show the platform's profile URL format
         return {
             "username": username,
             "platform": self.platform.name,
@@ -137,6 +166,81 @@ class StatusCodeChecker(BasePlatformChecker):
             "status_code": response.status_code,
             "response_time": response_time,
         }
+
+    def _validate_profile_page(self, response: httpx.Response, username: str, original_url: str) -> bool:
+        """Validate that a 200 response is actually a user profile, not a false positive.
+
+        Args:
+            response: HTTP response
+            username: Username being searched
+            original_url: Original search URL
+
+        Returns:
+            True if likely a real profile, False if likely a false positive
+        """
+        final_url = str(response.url)
+        final_path = urlparse(final_url).path.lower()
+        original_path = urlparse(original_url).path.lower()
+        username_lower = username.lower()
+
+        # CRITICAL CHECK: Detect homepage/root redirects
+        # If we requested a profile URL but got redirected to just the homepage, it's a false positive
+        parsed_original = urlparse(original_url)
+        parsed_final = urlparse(final_url)
+
+        # Check if original URL had a meaningful path (with username) but final is just root
+        original_has_path = parsed_original.path and parsed_original.path not in ['/', '']
+        final_is_root = parsed_final.path in ['/', '', '/index.html', '/home', '/index', '/index.php']
+
+        if original_has_path and final_is_root:
+            # Redirected from /users/username to just / - definitely a false positive
+            logger.debug(f"False positive detected: {self.platform.name} - redirected to homepage")
+            return False
+
+        # ENHANCED CHECK: Username must appear in final URL path or query string
+        # This catches cases where we get 200 OK but no user-specific URL
+        final_full_url = final_url.lower()
+        if username_lower not in final_full_url:
+            # Username not in URL at all - likely a false positive
+            logger.debug(f"False positive detected: {self.platform.name} - username not in final URL")
+            return False
+
+        # SECONDARY CHECK: If redirected to a different path, verify username is still in the URL
+        if final_path != original_path:
+            # Only reject if BOTH conditions are true:
+            # 1. Username is not in the final path
+            # 2. Final path is the root/homepage
+            if username_lower not in final_path and final_is_root:
+                logger.debug(f"False positive detected: {self.platform.name} - no username in redirect to root")
+                return False
+
+        # OPTIONAL CHECK: Look for strong "not found" indicators in content
+        # Only check for very obvious false positives, don't be too aggressive
+        try:
+            content_lower = response.text.lower()
+
+            # Only reject if we find STRONG indicators that this is not a profile
+            strong_false_positive_patterns = [
+                r'user.?not.?found',
+                r'profile.?not.?found',
+                r'account.?not.?found',
+                r'page.?not.?found',
+                r'error.?404',
+            ]
+
+            for pattern in strong_false_positive_patterns:
+                if re.search(pattern, content_lower, re.IGNORECASE):
+                    # Only reject if the username is NOT in the content at all
+                    # (if username is present, might be a valid profile with these words)
+                    if username_lower not in content_lower:
+                        logger.debug(f"False positive detected: {self.platform.name} - 'not found' in content")
+                        return False
+        except Exception:
+            # If we can't read content, don't reject - better to have false positives than miss real profiles
+            pass
+
+        # Passed validation - likely a real profile
+        return True
 
 
 class RegexChecker(BasePlatformChecker):

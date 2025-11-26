@@ -26,6 +26,7 @@ class EmailResult:
     providers: List[str]
     disposable: bool
     reputation_score: float
+    online_profiles: Dict[str, str]
     metadata: Dict[str, Any]
     checked_at: datetime
 
@@ -235,6 +236,56 @@ class EmailIntelligence:
         except Exception:
             return False
 
+    async def search_online_profiles(self, email: str) -> Dict[str, str]:
+        """Search for online profiles created with this email.
+
+        Args:
+            email: Email address to search for
+
+        Returns:
+            Dictionary of platform names to profile URLs
+        """
+        from nyx.osint.search import SearchService
+
+        profiles = {}
+
+        try:
+            # Use the username search service to look for email-based profiles
+            search_service = SearchService()
+
+            # Extract username from email (part before @)
+            username = email.split('@')[0]
+
+            # Search for username matches
+            results = await search_service.search_username(
+                username=username,
+                exclude_nsfw=True,
+                timeout=60
+            )
+
+            for platform_name, result in results.items():
+                if result.get('found'):
+                    profiles[platform_name] = result.get('url', '')
+
+            # Also try searching with the full email address on select platforms
+            email_platforms = ['gravatar', 'github', 'about.me']
+            for platform_name in email_platforms:
+                try:
+                    platform_results = await search_service.search_username(
+                        username=email,
+                        platforms=[platform_name],
+                        timeout=10
+                    )
+                    if platform_results.get(platform_name, {}).get('found'):
+                        profiles[platform_name] = platform_results[platform_name].get('url', '')
+                except Exception:
+                    pass
+
+        except Exception as e:
+            logger.debug(f"Profile search failed for {email}: {e}")
+
+        return profiles
+
     def calculate_reputation(
         self, breached: bool, breach_count: int, disposable: bool, provider: Optional[str]
     ) -> float:
@@ -262,11 +313,12 @@ class EmailIntelligence:
 
         return max(0.0, score)
 
-    async def investigate(self, email: str) -> EmailResult:
+    async def investigate(self, email: str, search_profiles: bool = False) -> EmailResult:
         """Perform comprehensive email investigation.
 
         Args:
             email: Email address to investigate
+            search_profiles: Whether to search for online profiles (slower but more thorough)
 
         Returns:
             Email intelligence result
@@ -282,6 +334,7 @@ class EmailIntelligence:
                 providers=[],
                 disposable=False,
                 reputation_score=0.0,
+                online_profiles={},
                 metadata={},
                 checked_at=datetime.now(),
             )
@@ -289,8 +342,34 @@ class EmailIntelligence:
         disposable = self.is_disposable(email)
         provider = self.get_provider(email)
 
-        breach_info = await self.check_breach(email)
-        services = await self.check_email_services(email)
+        # Concurrent lookups
+        breach_task = self.check_breach(email)
+        services_task = self.check_email_services(email)
+
+        # Conditional profile search
+        if search_profiles:
+            profiles_task = self.search_online_profiles(email)
+            breach_info, services, online_profiles = await asyncio.gather(
+                breach_task,
+                services_task,
+                profiles_task,
+                return_exceptions=True
+            )
+            if isinstance(online_profiles, Exception):
+                online_profiles = {}
+        else:
+            breach_info, services = await asyncio.gather(
+                breach_task,
+                services_task,
+                return_exceptions=True
+            )
+            online_profiles = {}
+
+        # Handle exceptions
+        if isinstance(breach_info, Exception):
+            breach_info = {"breached": False, "breach_count": 0, "breaches": [], "sources": []}
+        if isinstance(services, Exception):
+            services = []
 
         providers = services.copy()
         if provider:
@@ -313,10 +392,12 @@ class EmailIntelligence:
             providers=providers,
             disposable=disposable,
             reputation_score=reputation,
+            online_profiles=online_profiles,
             metadata={
                 "domain": email.split("@")[-1],
                 "provider": provider,
                 "breach_sources": breach_info.get("sources", []),
+                "profile_search_enabled": search_profiles,
             },
             checked_at=datetime.now(),
         )

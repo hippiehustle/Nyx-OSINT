@@ -11,7 +11,7 @@ class Event:
     """Base event class."""
 
     event_type: str
-    source: str
+    source: str = "system"
     timestamp: datetime = field(default_factory=datetime.utcnow)
     data: Dict[str, Any] = field(default_factory=dict)
 

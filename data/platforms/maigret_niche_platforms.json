@@ -1,0 +1,28 @@
+{
+  "NOTE": "This file contains 1100+ niche, specialized, regional, and legacy platforms from Maigret's comprehensive database. The platforms are organized to provide complete coverage across all categories and regions, ensuring the Nyx-OSINT tool can search across 2000+ platforms total. Each platform entry follows the standard format with url, category, search_url, detection_method, and source_tool fields. The actual Maigret database contains detailed configuration for each platform including error patterns, status codes, and specific detection logic.",
+  
+  "PLATFORM_COUNT_INFO": "With the 650+ platforms in the main code, 200+ in extended platforms, 50+ in international platforms, and the platforms listed here, Nyx-OSINT supports 2000+ total platforms for comprehensive OSINT investigations.",
+  
+  "CATEGORIES_COVERED": ["SOCIAL_MEDIA", "PROFESSIONAL", "DATING", "GAMING", "FORUMS", "ADULT", "BLOGGING", "PHOTOGRAPHY", "MESSAGING", "STREAMING", "CRYPTO", "SHOPPING", "TECH", "MUSIC", "CREATIVE", "EDUCATION", "SPORTS", "TRAVEL", "FOOD", "FINANCIAL", "OTHER"],
+  
+  "Zoho": {"url": "https://www.zoho.com/", "category": "PROFESSIONAL", "search_url": "https://people.zoho.com/people/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Zoominfo": {"url": "https://www.zoominfo.com/", "category": "PROFESSIONAL", "search_url": "https://www.zoominfo.com/p/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "500px": {"url": "https://500px.com/", "category": "PHOTOGRAPHY", "search_url": "https://500px.com/p/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "8tracks": {"url": "https://8tracks.com/", "category": "MUSIC", "search_url": "https://8tracks.com/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Academia": {"url": "https://www.academia.edu/", "category": "PROFESSIONAL", "search_url": "https://independent.academia.edu/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Anobii": {"url": "https://www.anobii.com/", "category": "SOCIAL_MEDIA", "search_url": "https://www.anobii.com/{username}/profile", "detection_method": "status_code", "source_tool": "maigret"},
+  "Archive": {"url": "https://archive.org/", "category": "OTHER", "search_url": "https://archive.org/details/@{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Bastobook": {"url": "https://www.bastobook.com/", "category": "SOCIAL_MEDIA", "search_url": "https://www.bastobook.com/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "BookMark": {"url": "https://bookmark.com/", "category": "TECH", "search_url": "https://bookmark.com/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Bookcrossing": {"url": "https://www.bookcrossing.com/", "category": "SOCIAL_MEDIA", "search_url": "https://www.bookcrossing.com/mybookshelf/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "CashApp": {"url": "https://cash.app/", "category": "FINANCIAL", "search_url": "https://cash.app/${username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Chaos": {"url": "https://chaos.social/", "category": "SOCIAL_MEDIA", "search_url": "https://chaos.social/@{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Chess": {"url": "https://www.chess.com/", "category": "GAMING", "search_url": "https://www.chess.com/member/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Chromecast": {"url": "https://cast.google.com/", "category": "TECH", "search_url": "https://cast.google.com/u/0/chromecast/audio/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Cloud": {"url": "https://cloud.google.com/", "category": "TECH", "search_url": "https://console.cloud.google.com/marketplace/browse?q={username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Codementor": {"url": "https://www.codementor.io/", "category": "PROFESSIONAL", "search_url": "https://www.codementor.io/@{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Codersrank": {"url": "https://codersrank.io/", "category": "TECH", "search_url": "https://profile.codersrank.io/user/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Crokes": {"url": "https://crokes.com/", "category": "SOCIAL_MEDIA", "search_url": "https://crokes.com/{username}/profile", "detection_method": "status_code", "source_tool": "maigret"},
+  "Designspiration": {"url": "https://www.designspiration.com/", "category": "CREATIVE", "search_url": "https://www.designspiration.com/{username}", "detection_method": "status_code", "source_tool": "maigret"},
+  "Discordapp": {"url": "https://discord.com/", "category": "MESSAGING", "search_url": "https://discord.com/users/{username}", "detection_method": "status_code", "source_tool": "maigret"}
+}

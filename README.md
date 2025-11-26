@@ -6,8 +6,10 @@
 
 ### Core Capabilities
 - **2500+ Platform Search**: Username search across social media, professional, dating, gaming, forums, and adult platforms
-- **Email Intelligence**: Full email validation, breach checking (HIBP), service detection, reputation scoring
-- **Phone Intelligence**: Phone number parsing, validation, carrier lookup, location inference, line type detection
+- **Email Intelligence**: Full email validation, breach checking (HIBP), service detection, reputation scoring, optional online profile discovery
+- **Phone Intelligence**: Auto-region detection, phone number parsing, validation, carrier lookup, location inference, line type detection, name/address association
+- **Person Lookup (WHOIS)**: Comprehensive person investigation by name and state - find addresses, phone numbers, relatives, associates, social profiles, and employment history
+- **Deep Investigation**: Unified comprehensive search that automatically detects query type and runs all applicable searches (username, email, phone, person)
 - **Advanced Filtering**: 9 filter operators, query language, saved searches, batch processing
 - **Data Analysis**: Correlation analysis, relationship graphs, timeline analysis, pattern detection
 - **Profile Correlation**: Relationship analysis and profile linking with confidence scoring
@@ -66,26 +68,66 @@ See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed information.
 
 ## Installation
 
-### Prerequisites
+### 🚀 Quick Start (Recommended)
+
+**Automated guided setup wizard handles everything for you!**
+
+#### Linux / macOS / WSL
+```bash
+# Make executable and run
+chmod +x setup.sh
+./setup.sh
+```
+
+#### Windows (PowerShell)
+```powershell
+# Run as Administrator (recommended)
+.\setup.ps1
+```
+
+The setup wizard will:
+- ✅ Detect and install Python 3.12+
+- ✅ Install Poetry dependency manager
+- ✅ Configure environment variables
+- ✅ Install all dependencies (including Playwright browsers)
+- ✅ Initialize database
+- ✅ Verify installation
+- ✅ Provide detailed setup logs
+
+**See [QUICKSTART.md](QUICKSTART.md) for a quick reference or [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) for detailed instructions.**
+
+---
+
+### Manual Installation
+
+If you prefer manual setup:
+
+#### Prerequisites
 - Python 3.12+
 - Poetry (dependency management)
-- Tesseract-OCR (for image text recognition)
+- Tesseract-OCR (optional, for image text recognition)
 
-### Setup
+#### Steps
 
 ```bash
 # Clone or download the project
-cd Nyx
+cd Nyx-OSINT
+
+# Install Poetry
+curl -sSL https://install.python-poetry.org | python3 -
 
 # Install dependencies with Poetry
 poetry install
 
 # Copy configuration template
+cp .env.example .env
 cp config/settings.yaml config/settings.local.yaml
-cp .env.example .env.local
 
-# Edit configuration as needed
-nano config/settings.local.yaml
+# Initialize database
+poetry run python -c "from nyx.core.database import initialize_database; import asyncio; asyncio.run(initialize_database())"
+
+# Verify installation
+poetry run nyx-cli --version
 ```
 
 ## Usage
@@ -106,11 +148,34 @@ poetry run nyx --debug
 ### CLI Application
 
 ```bash
-# Search for username
-poetry run nyx-cli search john_doe
+# Username search
+poetry run nyx-cli search -u john_doe
 
-# Search with NSFW exclusion
-poetry run nyx-cli search john_doe --exclude-nsfw
+# Username search with NSFW exclusion
+poetry run nyx-cli search -u john_doe --no-nsfw
+
+# Email intelligence
+poetry run nyx-cli search -e user@example.com
+
+# Email with online profile discovery (slower but more thorough)
+poetry run nyx-cli search -e user@example.com --profiles
+
+# Phone intelligence (auto-detects region from number format)
+poetry run nyx-cli search -p +14155552671
+
+# Phone with explicit region
+poetry run nyx-cli search -p 4155552671 --region US
+
+# Person lookup (WHOIS)
+poetry run nyx-cli search -w "John Doe" --region CA
+
+# Person lookup with middle name/initial
+poetry run nyx-cli search -w "John M Doe" --region NY
+
+# Deep investigation (comprehensive search using all methods)
+poetry run nyx-cli search -d "john.doe@email.com"
+poetry run nyx-cli search -d "+14155552671"
+poetry run nyx-cli search -d "John Doe"
 
 # List all platforms
 poetry run nyx-cli platforms
@@ -120,12 +185,6 @@ poetry run nyx-cli platforms --category social_media
 
 # Show statistics
 poetry run nyx-cli stats
-
-# Email intelligence
-poetry run nyx-cli email user@example.com
-
-# Phone intelligence
-poetry run nyx-cli phone "+14155552671" --region US
 ```
 
 ## Configuration
