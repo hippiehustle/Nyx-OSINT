@@ -6,6 +6,7 @@ from typing import Optional
 
 import click
 
+from nyx import __version__
 from nyx.config.base import load_config
 from nyx.core.logger import setup_logging, get_logger
 from nyx.osint.platforms import get_platform_database
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="nyx-cli")
 @click.option("-c", "--config", help="Configuration file path", type=str)
 @click.option("-d", "--debug", help="Enable debug mode", is_flag=True)
 @click.pass_context
