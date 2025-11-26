@@ -177,15 +177,29 @@ function Test-Command {
 function Get-PythonVersion {
     try {
         if (Test-Command python) {
-            $output = python --version 2>&1
-            if ($output -match "Python (\d+\.\d+\.\d+)") {
-                return [Version]$matches[1]
+            $output = python --version 2>&1 | Out-String
+            if ($output -match "Python (\d+\.\d+)\.(\d+)") {
+                $major = $matches[1]
+                $patch = $matches[2]
+                return [PSCustomObject]@{
+                    Version = [Version]"$major.$patch"
+                    Major = $major
+                    IsValid = $major -eq "3.12"
+                }
             }
         }
-        return [Version]"0.0.0"
+        return [PSCustomObject]@{
+            Version = [Version]"0.0.0"
+            Major = "0.0"
+            IsValid = $false
+        }
     }
     catch {
-        return [Version]"0.0.0"
+        return [PSCustomObject]@{
+            Version = [Version]"0.0.0"
+            Major = "0.0"
+            IsValid = $false
+        }
     }
 }
 
@@ -246,16 +260,29 @@ function Read-Input {
 function Test-Python {
     Write-Info "Checking Python installation..."
 
-    $pythonVersion = Get-PythonVersion
+    $pythonInfo = Get-PythonVersion
 
-    if ($pythonVersion -ge $REQUIRED_PYTHON_VERSION) {
-        Write-Success "Python $pythonVersion found"
-        return $true
-    }
-    else {
-        Write-Warning "Python $REQUIRED_PYTHON_VERSION+ is required (found: $pythonVersion)"
+    if ($pythonInfo.Version -eq [Version]"0.0.0") {
+        Write-Warning "Python not found"
         return $false
     }
+
+    if (-not $pythonInfo.IsValid) {
+        Write-Warning "Python $($pythonInfo.Major) found, but Python 3.12 is required"
+        Write-Host ""
+        Write-Host "  Nyx-OSINT requires Python 3.12 specifically due to package compatibility." -ForegroundColor Yellow
+        Write-Host "  Python 3.14 is too new and breaks several dependencies (e.g., Pillow)." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Solution:" -ForegroundColor Cyan
+        Write-Host "    1. Install Python 3.12 from: https://www.python.org/downloads/" -ForegroundColor White
+        Write-Host "    2. Configure Poetry to use Python 3.12:" -ForegroundColor White
+        Write-Host "       poetry env use python3.12" -ForegroundColor Gray
+        Write-Host ""
+        return $false
+    }
+
+    Write-Success "Python $($pythonInfo.Version) found"
+    return $true
 }
 
 function Install-Python {
@@ -498,24 +525,59 @@ function New-ConfigFile {
 }
 
 function Install-Dependencies {
-    Write-Info "Installing Python dependencies..."
+    Write-Info "Installing Python dependencies (this may take 2-5 minutes)..."
 
     Push-Location $SCRIPT_DIR
 
     try {
         # Configure Poetry
-        poetry config virtualenvs.in-project true
+        poetry config virtualenvs.in-project true 2>&1 | Out-Null
         Write-VerboseLog "Configured Poetry to use local virtualenv"
 
         # Install dependencies
+        Write-Host "  Installing 40+ packages..." -ForegroundColor Gray
+
+        $installOutput = ""
         if ($ShowVerbose) {
             poetry install
+            $installSuccess = $LASTEXITCODE -eq 0
         }
         else {
-            poetry install 2>&1 | Out-Null
+            $installOutput = poetry install 2>&1 | Out-String
+            $installSuccess = $LASTEXITCODE -eq 0
         }
 
-        Write-Success "Dependencies installed"
+        if (-not $installSuccess) {
+            Write-Error "Poetry install failed"
+            if (-not $ShowVerbose) {
+                Write-Host $installOutput -ForegroundColor Red
+            }
+            Write-Fatal "Failed to install dependencies. Check the output above for errors."
+        }
+
+        # Verify installation by testing import
+        Write-Host "  Verifying installation..." -ForegroundColor Gray
+        $testImport = poetry run python -c "import nyx; print('OK')" 2>&1 | Out-String
+
+        if ($testImport -match "OK") {
+            Write-Success "Dependencies installed and verified"
+            return $true
+        }
+        else {
+            Write-Error "Package installation completed but nyx module cannot be imported"
+            Write-Host $testImport -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  This usually means:" -ForegroundColor Yellow
+            Write-Host "    - Wrong Python version (need Python 3.12)" -ForegroundColor White
+            Write-Host "    - Incompatible package versions" -ForegroundColor White
+            Write-Host ""
+            Write-Host "  Solution:" -ForegroundColor Cyan
+            Write-Host "    poetry env remove python" -ForegroundColor Gray
+            Write-Host "    poetry env use python3.12" -ForegroundColor Gray
+            Write-Host "    poetry install" -ForegroundColor Gray
+            Write-Host ""
+            Write-Fatal "Installation verification failed"
+        }
     }
     catch {
         Write-Fatal "Failed to install dependencies: $_"
@@ -527,18 +589,33 @@ function Install-Dependencies {
 
 function Install-PlaywrightBrowsers {
     if (Read-YesNo "Install Playwright browser dependencies for web scraping?" $true) {
-        Write-Info "Installing Playwright browsers..."
+        Write-Info "Installing Playwright browsers (downloading ~200MB)..."
 
         try {
-            poetry run playwright install chromium
-            Write-Success "Playwright browsers installed"
+            $playwrightOutput = poetry run playwright install chromium 2>&1 | Out-String
+
+            if ($LASTEXITCODE -eq 0 -and $playwrightOutput -match "(Downloaded|chromium)") {
+                Write-Success "Playwright browsers installed"
+                return $true
+            }
+            else {
+                Write-Warning "Playwright installation may have failed"
+                if ($ShowVerbose) {
+                    Write-Host $playwrightOutput -ForegroundColor Yellow
+                }
+                Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
+                return $false
+            }
         }
         catch {
             Write-Warning "Failed to install Playwright browsers: $_"
+            Write-Host "  Web scraping features may be limited" -ForegroundColor Yellow
+            return $false
         }
     }
     else {
-        Write-Warning "Skipping Playwright installation"
+        Write-Warning "Skipping Playwright installation. Web scraping features will be limited."
+        return $false
     }
 }
 
@@ -572,17 +649,37 @@ function Initialize-Database {
         $initScript = @'
 from nyx.core.database import initialize_database
 import asyncio
+import sys
 
 async def init():
-    await initialize_database()
-    print('Database initialized')
+    try:
+        await initialize_database()
+        print('DB_INIT_SUCCESS')
+        return 0
+    except Exception as e:
+        print(f'DB_INIT_FAILED: {e}', file=sys.stderr)
+        return 1
 
-asyncio.run(init())
+sys.exit(asyncio.run(init()))
 '@
 
-        $initScript | poetry run python -
+        $dbOutput = $initScript | poetry run python - 2>&1 | Out-String
 
-        Write-Success "Database initialized"
+        if ($LASTEXITCODE -eq 0 -and $dbOutput -match "DB_INIT_SUCCESS") {
+            Write-Success "Database initialized successfully"
+            return $true
+        }
+        else {
+            Write-Error "Database initialization failed"
+            Write-Host $dbOutput -ForegroundColor Red
+            Write-Host ""
+            Write-Host "  Common causes:" -ForegroundColor Yellow
+            Write-Host "    - Nyx module not properly installed" -ForegroundColor White
+            Write-Host "    - Database file permissions" -ForegroundColor White
+            Write-Host "    - Missing dependencies" -ForegroundColor White
+            Write-Host ""
+            Write-Fatal "Database initialization failed. See error above."
+        }
     }
     catch {
         Write-Fatal "Failed to initialize database: $_"
@@ -601,27 +698,34 @@ function Test-Installation {
 
     $script:CHECKS_PASSED = 0
     $script:CHECKS_TOTAL = 5
+    $script:CRITICAL_CHECKS_PASSED = 0
+    $script:CRITICAL_CHECKS_TOTAL = 2
+    $failedChecks = @()
 
-    # Check 1: Python import
+    # Check 1: Python import (CRITICAL)
     Write-Host "  Checking Python package... " -NoNewline
-    try {
-        poetry run python -c "import nyx; print(nyx.__version__)" | Out-Null
+    $importTest = poetry run python -c "import nyx; print(nyx.__version__)" 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0 -and $importTest -match "\d+\.\d+\.\d+") {
         Write-Host "✓" -ForegroundColor Green
         $script:CHECKS_PASSED++
+        $script:CRITICAL_CHECKS_PASSED++
     }
-    catch {
-        Write-Host "✗" -ForegroundColor Red
+    else {
+        Write-Host "✗ CRITICAL" -ForegroundColor Red
+        $failedChecks += "Python package import failed"
     }
 
-    # Check 2: CLI command
+    # Check 2: CLI command (CRITICAL)
     Write-Host "  Checking CLI command... " -NoNewline
-    try {
-        poetry run nyx-cli --version | Out-Null
+    $cliTest = poetry run nyx-cli --version 2>&1 | Out-String
+    if ($LASTEXITCODE -eq 0 -and $cliTest -match "(\d+\.\d+\.\d+|nyx)") {
         Write-Host "✓" -ForegroundColor Green
         $script:CHECKS_PASSED++
+        $script:CRITICAL_CHECKS_PASSED++
     }
-    catch {
-        Write-Host "✗" -ForegroundColor Red
+    else {
+        Write-Host "✗ CRITICAL" -ForegroundColor Red
+        $failedChecks += "CLI command failed"
     }
 
     # Check 3: Configuration
@@ -632,6 +736,7 @@ function Test-Installation {
     }
     else {
         Write-Host "✗" -ForegroundColor Red
+        $failedChecks += "Configuration file missing"
     }
 
     # Check 4: Database
@@ -652,16 +757,30 @@ function Test-Installation {
     }
     else {
         Write-Host "✗" -ForegroundColor Red
+        $failedChecks += "Required directories missing"
     }
 
     Write-Host ""
 
-    if ($script:CHECKS_PASSED -ge 3) {
+    # Critical checks must ALL pass
+    if ($script:CRITICAL_CHECKS_PASSED -eq $script:CRITICAL_CHECKS_TOTAL) {
         Write-Success "Installation verified ($script:CHECKS_PASSED/$script:CHECKS_TOTAL checks passed)"
         return $true
     }
     else {
-        Write-Error "Installation verification failed ($script:CHECKS_PASSED/$script:CHECKS_TOTAL checks passed)"
+        Write-Error "Installation verification failed"
+        Write-Host ""
+        Write-Host "  Critical checks passed: $script:CRITICAL_CHECKS_PASSED/$script:CRITICAL_CHECKS_TOTAL" -ForegroundColor Red
+        Write-Host "  Total checks passed: $script:CHECKS_PASSED/$script:CHECKS_TOTAL" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Failed checks:" -ForegroundColor Red
+        foreach ($check in $failedChecks) {
+            Write-Host "    - $check" -ForegroundColor White
+        }
+        Write-Host ""
+        Write-Host "  The installation is incomplete. Please check the errors above." -ForegroundColor Yellow
+        Write-Host "  Most common issue: Wrong Python version (need 3.12, not 3.14)" -ForegroundColor Yellow
+        Write-Host ""
         return $false
     }
 }
@@ -692,7 +811,20 @@ function Show-SystemInfo {
     Write-Info "System Information:"
     Write-Host "  OS: Windows $(([System.Environment]::OSVersion.Version).ToString())"
     Write-Host "  PowerShell: $($PSVersionTable.PSVersion)"
-    Write-Host "  Python: $(Get-PythonVersion)"
+
+    $pythonInfo = Get-PythonVersion
+    Write-Host "  Python: " -NoNewline
+    if ($pythonInfo.IsValid) {
+        Write-Host "$($pythonInfo.Version)" -ForegroundColor Green
+    }
+    elseif ($pythonInfo.Version -eq [Version]"0.0.0") {
+        Write-Host "Not found" -ForegroundColor Red
+    }
+    else {
+        Write-Host "$($pythonInfo.Version) " -ForegroundColor Yellow -NoNewline
+        Write-Host "(WARNING: Need 3.12)" -ForegroundColor Red
+    }
+
     Write-Host "  Working Directory: $SCRIPT_DIR"
     Write-Host "  Administrator: $(Test-Administrator)"
     Write-Host ""
@@ -822,8 +954,12 @@ function Main {
 
     # Step 6: Verification
     Write-Info "=== Step 6/6: Verifying Installation ==="
-    Test-Installation
+    $verificationPassed = Test-Installation
     Write-Host ""
+
+    if (-not $verificationPassed) {
+        Write-Fatal "Installation verification failed. Please fix the errors above and run setup again."
+    }
 
     # Summary
     Show-Summary
