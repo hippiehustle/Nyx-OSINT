@@ -138,38 +138,46 @@ class SearchService:
             logger.warning(f"No platforms found matching filters")
             return {}
 
-        # Create tasks for all platform checks
-        tasks = [
-            self._check_platform(platform, username, progress_callback=progress_callback)
-            for platform in platforms_to_search.values()
-        ]
+        # Create tasks with platform mapping to maintain association
+        task_to_platform = {}
+        for platform in platforms_to_search.values():
+            task = asyncio.create_task(self._check_platform(platform, username, progress_callback=progress_callback))
+            task_to_platform[task] = platform
 
-        # Execute searches with timeout
-        try:
-            results = await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"Search timeout after {timeout} seconds")
-            results = []
+        # Execute searches with timeout - collect results from completed tasks
+        if timeout:
+            done, pending = await asyncio.wait(task_to_platform.keys(), timeout=timeout)
 
-        # Process results
+            # If timeout occurred, cancel remaining tasks but keep completed results
+            if pending:
+                logger.warning(f"Search timeout after {timeout} seconds - {len(done)} completed, {len(pending)} cancelled")
+                for task in pending:
+                    task.cancel()
+                # Wait for cancellation to complete
+                await asyncio.gather(*pending, return_exceptions=True)
+        else:
+            # No timeout - wait for all tasks
+            done, pending = await asyncio.wait(task_to_platform.keys())
+
+        # Process results from completed tasks
         found_profiles: Dict[str, PlatformMatch] = {}
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                continue
-            if result and result.get("found"):
-                platform_name = list(platforms_to_search.values())[i].name
-                found_profiles[platform_name] = result
 
-                # Publish profile found event
-                await self.event_bus.publish(
-                    ProfileFoundEvent(
-                        source="SearchService",
-                        data={"username": username, "platform": platform_name, "url": result.get("url")},
+        for task in done:
+            platform = task_to_platform[task]
+            try:
+                result = task.result()
+                if result and result.get("found"):
+                    found_profiles[platform.name] = result
+
+                    # Publish profile found event
+                    await self.event_bus.publish(
+                        ProfileFoundEvent(
+                            source="SearchService",
+                            data={"username": username, "platform": platform.name, "url": result.get("url")},
+                        )
                     )
-                )
+            except Exception as e:
+                logger.debug(f"Task failed for {platform.name}: {e}")
 
         # Publish search complete event
         duration = time.time() - start_time
