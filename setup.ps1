@@ -653,11 +653,15 @@ import sys
 
 async def init():
     try:
-        await initialize_database()
+        # Use SQLite database URL
+        db_url = "sqlite+aiosqlite:///./nyx.db"
+        await initialize_database(db_url)
         print('DB_INIT_SUCCESS')
         return 0
     except Exception as e:
         print(f'DB_INIT_FAILED: {e}', file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         return 1
 
 sys.exit(asyncio.run(init()))
