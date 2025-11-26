@@ -49,6 +49,7 @@ class SearchService:
         platform: Platform,
         username: str,
         checker: Optional[BasePlatformChecker] = None,
+        progress_callback: Optional[callable] = None,
     ) -> Optional[PlatformMatch]:
         """Check single platform for username.
 
@@ -56,6 +57,7 @@ class SearchService:
             platform: Platform to check
             username: Username to search for
             checker: Custom checker instance
+            progress_callback: Optional callback for progress updates
 
         Returns:
             Search result or None
@@ -65,6 +67,8 @@ class SearchService:
             cache_key = self._get_cache_key(username, platform.name)
             cached_result = await self.cache.get(cache_key)
             if cached_result is not None:
+                if progress_callback:
+                    progress_callback(platform.name, "cached")
                 return cached_result
 
         # Use provided checker or create default
@@ -76,7 +80,12 @@ class SearchService:
 
         try:
             async with self.semaphore:
+                if progress_callback:
+                    progress_callback(platform.name, "checking")
                 result = await checker.check(username)
+                if progress_callback:
+                    status = "found" if result and result.get("found") else "not_found"
+                    progress_callback(platform.name, status)
 
             # Cache result
             if self.cache_enabled and self.cache and result:
@@ -85,7 +94,9 @@ class SearchService:
 
             return result
         except Exception as e:
-            logger.error(f"Error checking {platform.name}: {e}")
+            logger.debug(f"Error checking {platform.name}: {e}")
+            if progress_callback:
+                progress_callback(platform.name, "error")
             return None
 
     async def search_username(

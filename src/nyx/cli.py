@@ -6,6 +6,7 @@ phone number lookups, and platform management.
 """
 
 import asyncio
+import logging
 import sys
 from typing import Optional, List
 
@@ -21,6 +22,9 @@ from nyx.intelligence.phone import PhoneIntelligence
 from nyx.models.platform import PlatformCategory
 
 logger = get_logger(__name__)
+
+# Configure logging for cleaner CLI output
+logging.getLogger("nyx.osint.search").setLevel(logging.WARNING)
 
 
 # ============================================================================
@@ -327,6 +331,8 @@ def _search_username(
 ):
     """Execute username search."""
     async def async_search():
+        import sys
+
         search_service = SearchService()
 
         # Parse platforms if provided
@@ -355,6 +361,42 @@ def _search_username(
         click.echo(f"⏱️  Timeout: {timeout}s")
         click.echo("")
 
+        # Progress tracking
+        checked_count = [0]
+        found_count = [0]
+        total_platforms = [0]
+
+        def show_progress(platform_name: str, status: str):
+            """Show search progress in a user-friendly way."""
+            if status == "checking":
+                checked_count[0] += 1
+                # Show a simple progress indicator
+                if checked_count[0] == 1 or checked_count[0] % 10 == 0 or status == "found":
+                    click.echo(f"⏳ Checking {checked_count[0]}/{total_platforms[0]} platforms...", nl=False)
+                    click.echo("\r", nl=False)
+                    sys.stdout.flush()
+            elif status == "found":
+                found_count[0] += 1
+                click.echo(f"✓ Found on {platform_name}" + " " * 30)
+
+        # Count total platforms that will be searched
+        from nyx.osint.platforms import get_platform_database
+        db = get_platform_database()
+        platforms_dict = {}
+        for name, platform in db.platforms.items():
+            if not platform.is_active:
+                continue
+            if nsfw_filter and platform.is_nsfw:
+                continue
+            if platform_list and platform.name.lower() not in [p.lower() for p in platform_list]:
+                continue
+            if category_list and platform.category.value not in [c.lower() for c in category_list]:
+                continue
+            platforms_dict[name] = platform
+
+        total_platforms[0] = len(platforms_dict)
+        click.echo(f"🔎 Searching {total_platforms[0]} platforms...\n")
+
         results = await search_service.search_username(
             username=username,
             platforms=platform_list,
@@ -362,6 +404,9 @@ def _search_username(
             exclude_nsfw=nsfw_filter,
             timeout=timeout,
         )
+
+        # Clear progress line
+        click.echo("\r" + " " * 80 + "\r", nl=False)
 
         if not results:
             click.echo("❌ No profiles found")
