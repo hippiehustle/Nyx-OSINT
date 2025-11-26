@@ -2,6 +2,7 @@
 
 from typing import AsyncIterator, Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -72,7 +73,7 @@ class DatabaseManager:
             if not self.engine:
                 return False
             async with self.engine.connect() as conn:
-                await conn.execute("SELECT 1")
+                await conn.execute(text("SELECT 1"))
             return True
         except Exception:
             return False
