@@ -337,17 +337,18 @@ def _search_username(
         # Convert categories to list
         category_list = list(categories) if categories else None
 
-        # Special handling for NSFW-only search
+        # Handle NSFW filtering
+        nsfw_filter = exclude_nsfw
         if only_nsfw:
             category_list = ["adult"]
-            exclude_nsfw = False
+            nsfw_filter = False
 
         click.echo(f"🔍 Searching for username: {username}")
         if platform_list:
             click.echo(f"📌 Platforms: {', '.join(platform_list)}")
         if category_list:
             click.echo(f"📂 Categories: {', '.join(category_list)}")
-        if exclude_nsfw:
+        if nsfw_filter:
             click.echo("🚫 Excluding NSFW platforms")
         if only_nsfw:
             click.echo("🔞 Searching ONLY NSFW platforms")
@@ -358,7 +359,7 @@ def _search_username(
             username=username,
             platforms=platform_list,
             categories=category_list,
-            exclude_nsfw=exclude_nsfw,
+            exclude_nsfw=nsfw_filter,
             timeout=timeout,
         )
 
