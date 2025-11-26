@@ -8,6 +8,7 @@ phone number lookups, and platform management.
 import asyncio
 import logging
 import sys
+from datetime import datetime
 from typing import Optional, List
 
 import click
@@ -407,15 +408,21 @@ def _search_username(
         checked_count = [0]
         found_count = [0]
         total_platforms = [0]
+        progress_bar_ref = [None]  # Will hold reference to progress bar
 
         def show_progress(platform_name: str, status: str):
-            """Show search progress in a user-friendly way."""
+            """Show search progress and update progress bar."""
             if status == "checking":
                 checked_count[0] += 1
             elif status == "found":
                 found_count[0] += 1
             elif status == "cached":
                 checked_count[0] += 1
+
+            # Update progress bar if it exists
+            if progress_bar_ref[0] and total_platforms[0] > 0:
+                percentage = (checked_count[0] / total_platforms[0]) * 100.0
+                progress_bar_ref[0].update("search", percentage)
 
         # Count total platforms that will be searched
         from nyx.osint.platforms import get_platform_database
@@ -435,24 +442,32 @@ def _search_username(
         total_platforms[0] = len(platforms_dict)
         click.echo(f"🔎 Searching {total_platforms[0]} platforms...\n")
 
-        # Create animated progress indicator
-        import threading
-        import itertools
+        # Create animated progress bar
+        from nyx.utils.progress import AnimatedProgressBar, ProgressBarConfig
 
-        stop_spinner = threading.Event()
-        spinner_chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+        # Configure progress bar
+        progress_config = ProgressBarConfig(
+            animation_sequence="░▒▓█▓▒",
+            label_width=30,
+            size_width=12,
+            auto_fit=True,
+            animation_speed=100,
+            progress_update_interval=200,
+        )
 
-        def spin():
-            """Display animated spinner while search is running."""
-            while not stop_spinner.is_set():
-                char = next(spinner_chars)
-                sys.stdout.write(f'\r{char} Searching {total_platforms[0]} platforms... {checked_count[0]} checked, {found_count[0]} found')
-                sys.stdout.flush()
-                stop_spinner.wait(0.1)
+        progress_bar = AnimatedProgressBar(progress_config)
+        progress_bar.add_item(
+            "search",
+            f"Searching {username}",
+            f"{total_platforms[0]} platforms",
+            0.0
+        )
 
-        # Start spinner in background thread
-        spinner_thread = threading.Thread(target=spin, daemon=True)
-        spinner_thread.start()
+        # Store reference for callback
+        progress_bar_ref[0] = progress_bar
+
+        # Start animated progress bar
+        progress_bar.start()
 
         try:
             results = await search_service.search_username(
@@ -463,13 +478,19 @@ def _search_username(
                 timeout=timeout,
                 progress_callback=show_progress,
             )
-        finally:
-            # Stop spinner
-            stop_spinner.set()
-            spinner_thread.join(timeout=0.5)
 
-        # Clear progress line
-        click.echo("\r" + " " * 100 + "\r", nl=False)
+            # Update progress bar to 100% when complete
+            progress_bar.update("search", 100.0)
+            # Give it a moment to show completion
+            import time
+            time.sleep(0.5)
+
+        finally:
+            # Stop progress bar
+            progress_bar.stop()
+
+        # Add a newline after progress bar
+        click.echo("")
 
         if not results:
             click.echo("❌ No profiles found")
