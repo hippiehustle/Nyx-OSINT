@@ -126,6 +126,21 @@ def cli(ctx, config, debug):
     metavar="PHONE",
 )
 @click.option(
+    "-w", "--whois",
+    help="Person lookup: 'FirstName LastName' or 'FirstName M LastName' (state optional with --region)",
+    metavar="NAME",
+)
+@click.option(
+    "-d", "--deep",
+    help="Deep investigation: comprehensive search using all available methods",
+    metavar="QUERY",
+)
+@click.option(
+    "--profiles",
+    is_flag=True,
+    help="Search for online profiles associated with email (use with -e/--email)",
+)
+@click.option(
     "--platforms",
     "-P",
     help="Specific platforms to search (comma-separated)",
@@ -189,6 +204,9 @@ def search(
     username,
     email,
     phone,
+    whois,
+    deep,
+    profiles,
     platforms,
     category,
     no_nsfw,
@@ -270,11 +288,13 @@ def search(
     • Results are sorted by platform name
     """
     # Validation
-    if not (username or email or phone):
+    if not (username or email or phone or whois or deep):
         click.echo("❌ Error: You must specify at least one search type:", err=True)
         click.echo("  -u/--username    Search for username", err=True)
         click.echo("  -e/--email       Investigate email", err=True)
         click.echo("  -p/--phone       Investigate phone", err=True)
+        click.echo("  -w/--whois       Person lookup", err=True)
+        click.echo("  -d/--deep        Deep investigation", err=True)
         click.echo("\n💡 Use 'nyx-cli search --help' for more information", err=True)
         sys.exit(1)
 
@@ -282,7 +302,7 @@ def search(
         click.echo("❌ Error: --no-nsfw and --only-nsfw are mutually exclusive", err=True)
         sys.exit(1)
 
-    if len([x for x in [username, email, phone] if x]) > 1:
+    if len([x for x in [username, email, phone, whois, deep] if x]) > 1:
         click.echo("❌ Error: Specify only ONE search type at a time", err=True)
         sys.exit(1)
 
@@ -302,6 +322,7 @@ def search(
     elif email:
         _search_email(
             email=email,
+            search_profiles=profiles,
             timeout=timeout,
             output_format=output,
             save_file=save,
@@ -310,6 +331,23 @@ def search(
     elif phone:
         _search_phone(
             phone=phone,
+            region=region,
+            timeout=timeout,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+    elif whois:
+        _search_person(
+            name=whois,
+            state=region,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+    elif deep:
+        _search_deep(
+            query=deep,
             region=region,
             timeout=timeout,
             output_format=output,
@@ -474,6 +512,7 @@ def _search_username(
 
 def _search_email(
     email: str,
+    search_profiles: bool,
     timeout: int,
     output_format: str,
     save_file: Optional[str],
@@ -481,10 +520,14 @@ def _search_email(
 ):
     """Execute email search."""
     async def async_email_check():
-        click.echo(f"📧 Investigating email: {email}\n")
+        click.echo(f"📧 Investigating email: {email}")
+        if search_profiles:
+            click.echo("🔍 Profile search enabled (this may take longer)\n")
+        else:
+            click.echo("")
 
         email_intel = EmailIntelligence()
-        result = await email_intel.investigate(email)
+        result = await email_intel.investigate(email, search_profiles=search_profiles)
 
         if output_format == "json":
             import json
@@ -506,9 +549,14 @@ def _search_email(
                     click.echo(f"   Breaches: {', '.join(result.breaches)}")
 
             if result.providers:
-                click.echo(f"\n🏢 Associated Providers:")
+                click.echo(f"\n🏢 ASSOCIATED PROVIDERS:")
                 for provider in result.providers:
                     click.echo(f"   • {provider}")
+
+            if result.online_profiles:
+                click.echo(f"\n🌐 ONLINE PROFILES ({len(result.online_profiles)} found):")
+                for platform, url in sorted(result.online_profiles.items()):
+                    click.echo(f"   • {platform}: {url}")
 
             click.echo(f"\n⭐ Reputation Score: {result.reputation_score:.1f}/100")
             click.echo(f"🕐 Checked: {result.checked_at}")
@@ -567,11 +615,23 @@ def _search_phone(
 
                 click.echo(f"\n⭐ Reputation Score: {result.reputation_score:.1f}/100")
 
+                if result.associated_name:
+                    click.echo(f"\n👤 ASSOCIATED INFORMATION:")
+                    click.echo(f"   Name: {result.associated_name}")
+
+                if result.associated_addresses:
+                    click.echo(f"   Addresses:")
+                    for address in result.associated_addresses:
+                        click.echo(f"     • {address}")
+
                 if result.metadata.get("social_platforms"):
                     platforms = result.metadata["social_platforms"]
-                    click.echo(f"\n🌐 Social Platforms:")
+                    click.echo(f"\n🌐 SOCIAL PLATFORMS:")
                     for platform in platforms:
-                        click.echo(f"   • {platform}")
+                        click.echo(f"   • {platform.title()}")
+
+                if result.metadata.get("auto_detected_region"):
+                    click.echo(f"\n💡 Region was auto-detected from phone number format")
 
             click.echo(f"\n🕐 Checked: {result.checked_at}")
 
@@ -582,6 +642,273 @@ def _search_phone(
             click.echo(f"\n💾 Results saved to: {save_file}")
 
     asyncio.run(async_phone_check())
+
+
+def _search_person(
+    name: str,
+    state: Optional[str],
+    output_format: str,
+    save_file: Optional[str],
+    verbose: bool,
+):
+    """Execute person WHOIS search."""
+    async def async_person_check():
+        # Parse name
+        parts = name.strip().split()
+        if len(parts) < 2:
+            click.echo("❌ Error: Name must include at least first and last name", err=True)
+            click.echo("   Examples: 'John Doe' or 'John M Doe'", err=True)
+            sys.exit(1)
+
+        first_name = parts[0]
+        last_name = parts[-1]
+        middle_name = parts[1] if len(parts) == 3 else None
+
+        full_name = ' '.join(parts)
+        click.echo(f"👤 Investigating person: {full_name}")
+        if state:
+            click.echo(f"📍 State: {state}")
+        click.echo("")
+
+        from nyx.intelligence.person import PersonIntelligence
+
+        person_intel = PersonIntelligence()
+        result = await person_intel.investigate(
+            first_name=first_name,
+            last_name=last_name,
+            middle_name=middle_name,
+            state=state,
+        )
+
+        if output_format == "json":
+            import json
+            click.echo(json.dumps(result.__dict__, indent=2, default=str))
+        else:
+            click.echo("=" * 80)
+            click.echo(f"📊 Person Intelligence Report")
+            click.echo("=" * 80)
+            click.echo(f"\n👤 NAME: {result.metadata['full_name']}")
+
+            if result.age:
+                click.echo(f"🎂 Age: {result.age}")
+            elif result.age_range:
+                click.echo(f"🎂 Age Range: {result.age_range}")
+
+            if result.addresses:
+                click.echo(f"\n🏠 ADDRESSES ({len(result.addresses)}):")
+                for addr in result.addresses[:5]:  # Show first 5
+                    click.echo(f"   • {addr}")
+
+            if result.phone_numbers:
+                click.echo(f"\n📱 PHONE NUMBERS ({len(result.phone_numbers)}):")
+                for phone in result.phone_numbers[:5]:  # Show first 5
+                    click.echo(f"   • {phone}")
+
+            if result.email_addresses:
+                click.echo(f"\n📧 EMAIL ADDRESSES ({len(result.email_addresses)}):")
+                for email in result.email_addresses[:5]:  # Show first 5
+                    click.echo(f"   • {email}")
+
+            if result.relatives:
+                click.echo(f"\n👨‍👩‍👧 POSSIBLE RELATIVES ({len(result.relatives)}):")
+                for relative in result.relatives[:10]:  # Show first 10
+                    click.echo(f"   • {relative}")
+
+            if result.associates:
+                click.echo(f"\n🤝 POSSIBLE ASSOCIATES ({len(result.associates)}):")
+                for associate in result.associates[:10]:  # Show first 10
+                    click.echo(f"   • {associate}")
+
+            if result.social_profiles:
+                click.echo(f"\n🌐 SOCIAL PROFILES ({len(result.social_profiles)}):")
+                for platform, url in sorted(result.social_profiles.items())[:10]:
+                    click.echo(f"   • {platform}: {url}")
+
+            if result.employment:
+                click.echo(f"\n💼 EMPLOYMENT/EDUCATION:")
+                for item in result.employment[:5]:  # Show first 5
+                    click.echo(f"   • {item}")
+
+            click.echo(f"\n🕐 Checked: {result.checked_at}")
+
+        if save_file:
+            import json
+            with open(save_file, 'w') as f:
+                json.dump(result.__dict__, f, indent=2, default=str)
+            click.echo(f"\n💾 Results saved to: {save_file}")
+
+    asyncio.run(async_person_check())
+
+
+def _search_deep(
+    query: str,
+    region: Optional[str],
+    timeout: int,
+    output_format: str,
+    save_file: Optional[str],
+    verbose: bool,
+):
+    """Execute deep investigation."""
+    async def async_deep_search():
+        click.echo(f"🔎 Deep Investigation: {query}")
+        click.echo("🌊 Running comprehensive search across all available methods...")
+        click.echo("")
+
+        results = {
+            "query": query,
+            "username_results": {},
+            "email_results": None,
+            "phone_results": None,
+            "person_results": None,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+        from nyx.osint.search import SearchService
+        from nyx.intelligence.email import EmailIntelligence
+        from nyx.intelligence.phone import PhoneIntelligence
+        from nyx.intelligence.person import PersonIntelligence
+
+        # Determine what type of query this is and search accordingly
+        query_clean = query.strip()
+
+        # 1. Always try username search
+        click.echo("🔍 Searching as username...")
+        search_service = SearchService()
+        try:
+            username_results = await search_service.search_username(
+                username=query_clean,
+                exclude_nsfw=True,
+                timeout=timeout or 60
+            )
+            results["username_results"] = {k: v for k, v in username_results.items() if v.get('found')}
+            click.echo(f"   ✓ Found {len(results['username_results'])} username matches")
+        except Exception as e:
+            click.echo(f"   ✗ Username search failed: {e}")
+
+        # 2. Check if it looks like an email
+        if '@' in query_clean and '.' in query_clean.split('@')[-1]:
+            click.echo("\n📧 Detected email format, investigating...")
+            email_intel = EmailIntelligence()
+            try:
+                email_result = await email_intel.investigate(query_clean, search_profiles=True)
+                results["email_results"] = email_result
+                click.echo(f"   ✓ Email investigation complete")
+            except Exception as e:
+                click.echo(f"   ✗ Email investigation failed: {e}")
+
+        # 3. Check if it looks like a phone number
+        if any(c.isdigit() for c in query_clean) and len([c for c in query_clean if c.isdigit()]) >= 10:
+            click.echo("\n📱 Detected phone number format, investigating...")
+            phone_intel = PhoneIntelligence()
+            try:
+                phone_result = await phone_intel.investigate(query_clean, region=region)
+                if phone_result.valid:
+                    results["phone_results"] = phone_result
+                    click.echo(f"   ✓ Phone investigation complete")
+                else:
+                    click.echo(f"   ✗ Phone number invalid")
+            except Exception as e:
+                click.echo(f"   ✗ Phone investigation failed: {e}")
+
+        # 4. Check if it looks like a person name
+        parts = query_clean.split()
+        if len(parts) >= 2 and all(p.isalpha() or p in ["'", "-"] for p in parts):
+            click.echo("\n👤 Detected person name format, investigating...")
+            person_intel = PersonIntelligence()
+            try:
+                first_name = parts[0]
+                last_name = parts[-1]
+                middle_name = parts[1] if len(parts) == 3 else None
+
+                person_result = await person_intel.investigate(
+                    first_name=first_name,
+                    last_name=last_name,
+                    middle_name=middle_name,
+                    state=region,
+                )
+                results["person_results"] = person_result
+                click.echo(f"   ✓ Person investigation complete")
+            except Exception as e:
+                click.echo(f"   ✗ Person investigation failed: {e}")
+
+        # Display comprehensive results
+        click.echo("\n" + "=" * 80)
+        click.echo(f"📊 Deep Investigation Report")
+        click.echo("=" * 80)
+
+        if output_format == "json":
+            import json
+            # Convert dataclass results to dicts
+            json_results = results.copy()
+            if json_results.get("email_results"):
+                json_results["email_results"] = json_results["email_results"].__dict__
+            if json_results.get("phone_results"):
+                json_results["phone_results"] = json_results["phone_results"].__dict__
+            if json_results.get("person_results"):
+                json_results["person_results"] = json_results["person_results"].__dict__
+            click.echo(json.dumps(json_results, indent=2, default=str))
+        else:
+            click.echo(f"\n🔍 Query: {query}")
+
+            if results["username_results"]:
+                click.echo(f"\n🌐 USERNAME MATCHES ({len(results['username_results'])}):")
+                for platform, data in sorted(results["username_results"].items())[:15]:
+                    click.echo(f"   • {platform}: {data.get('url', '')}")
+
+            if results.get("email_results"):
+                email = results["email_results"]
+                click.echo(f"\n📧 EMAIL INTELLIGENCE:")
+                click.echo(f"   Valid: {email.valid}")
+                click.echo(f"   Breached: {email.breached}")
+                if email.online_profiles:
+                    click.echo(f"   Online Profiles: {len(email.online_profiles)}")
+
+            if results.get("phone_results"):
+                phone = results["phone_results"]
+                click.echo(f"\n📱 PHONE INTELLIGENCE:")
+                click.echo(f"   Country: {phone.country_name}")
+                click.echo(f"   Carrier: {phone.carrier or 'Unknown'}")
+                click.echo(f"   Line Type: {phone.line_type}")
+                if phone.associated_name:
+                    click.echo(f"   Associated Name: {phone.associated_name}")
+
+            if results.get("person_results"):
+                person = results["person_results"]
+                click.echo(f"\n👤 PERSON INTELLIGENCE:")
+                click.echo(f"   Name: {person.metadata['full_name']}")
+                if person.addresses:
+                    click.echo(f"   Addresses Found: {len(person.addresses)}")
+                if person.phone_numbers:
+                    click.echo(f"   Phone Numbers Found: {len(person.phone_numbers)}")
+                if person.social_profiles:
+                    click.echo(f"   Social Profiles Found: {len(person.social_profiles)}")
+
+            total_findings = (
+                len(results["username_results"]) +
+                (1 if results.get("email_results") and results["email_results"].valid else 0) +
+                (1 if results.get("phone_results") and results["phone_results"].valid else 0) +
+                (1 if results.get("person_results") else 0)
+            )
+
+            click.echo(f"\n✅ Total Findings: {total_findings}")
+            click.echo(f"🕐 Completed: {datetime.now()}")
+
+        if save_file:
+            import json
+            # Convert dataclass results to dicts for JSON serialization
+            save_data = results.copy()
+            if save_data.get("email_results"):
+                save_data["email_results"] = save_data["email_results"].__dict__
+            if save_data.get("phone_results"):
+                save_data["phone_results"] = save_data["phone_results"].__dict__
+            if save_data.get("person_results"):
+                save_data["person_results"] = save_data["person_results"].__dict__
+
+            with open(save_file, 'w') as f:
+                json.dump(save_data, f, indent=2, default=str)
+            click.echo(f"\n💾 Results saved to: {save_file}")
+
+    asyncio.run(async_deep_search())
 
 
 # ============================================================================

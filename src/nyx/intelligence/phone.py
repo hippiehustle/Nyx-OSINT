@@ -30,6 +30,8 @@ class PhoneResult:
     formatted_national: str
     formatted_e164: str
     reputation_score: float
+    associated_name: Optional[str]
+    associated_addresses: List[str]
     metadata: Dict[str, Any]
     checked_at: datetime
 
@@ -42,16 +44,49 @@ class PhoneIntelligence:
         self.http_client = HTTPClient()
         self.cache = get_cache()
 
-    def parse_number(self, phone: str, region: Optional[str] = None) -> Optional[phonenumbers.PhoneNumber]:
-        """Parse phone number.
+    def auto_detect_region(self, phone: str) -> Optional[str]:
+        """Auto-detect region from phone number format.
 
         Args:
             phone: Phone number string
-            region: Default region code (e.g., 'US')
+
+        Returns:
+            Detected region code or None
+        """
+        # Try parsing without region - works if number has country code
+        try:
+            parsed = phonenumbers.parse(phone, None)
+            if phonenumbers.is_valid_number(parsed):
+                return phonenumbers.region_code_for_number(parsed)
+        except phonenumbers.NumberParseException:
+            pass
+
+        # Try common region codes if direct parsing fails
+        common_regions = ['US', 'GB', 'CA', 'AU', 'IN', 'DE', 'FR', 'IT', 'ES', 'BR']
+        for region in common_regions:
+            try:
+                parsed = phonenumbers.parse(phone, region)
+                if phonenumbers.is_valid_number(parsed):
+                    return region
+            except phonenumbers.NumberParseException:
+                continue
+
+        return None
+
+    def parse_number(self, phone: str, region: Optional[str] = None) -> Optional[phonenumbers.PhoneNumber]:
+        """Parse phone number with auto-region detection.
+
+        Args:
+            phone: Phone number string
+            region: Default region code (e.g., 'US'), auto-detected if None
 
         Returns:
             Parsed phone number or None
         """
+        # Auto-detect region if not provided
+        if not region:
+            region = self.auto_detect_region(phone)
+
         try:
             return phonenumbers.parse(phone, region)
         except phonenumbers.NumberParseException as e:
@@ -239,6 +274,60 @@ class PhoneIntelligence:
         """Check if phone is registered with Signal."""
         return False
 
+    async def lookup_name(self, phone: str) -> Optional[str]:
+        """Lookup name associated with phone number.
+
+        Uses multiple sources to find the name registered to a phone number.
+
+        Args:
+            phone: Phone number in E164 format
+
+        Returns:
+            Associated name or None
+        """
+        # Try TrueCaller-style lookup
+        try:
+            headers = {
+                "User-Agent": "Nyx-OSINT/0.1.0",
+            }
+            # Note: In production, you'd need API keys for these services
+            # This is a placeholder implementation
+            response = await self.http_client.get(
+                f"https://api.numlookupapi.com/v1/validate/{phone}",
+                headers=headers,
+                timeout=10,
+            )
+            if response.status == 200:
+                data = await response.json()
+                return data.get("name") or data.get("carrier_name")
+        except Exception as e:
+            logger.debug(f"Name lookup failed: {e}")
+
+        return None
+
+    async def lookup_addresses(self, phone: str) -> List[str]:
+        """Lookup addresses associated with phone number.
+
+        Args:
+            phone: Phone number in E164 format
+
+        Returns:
+            List of associated addresses
+        """
+        addresses = []
+
+        try:
+            # Placeholder for reverse phone lookup services
+            # In production, integrate with services like:
+            # - WhitePages
+            # - Spokeo
+            # - BeenVerified
+            pass
+        except Exception as e:
+            logger.debug(f"Address lookup failed: {e}")
+
+        return addresses
+
     def calculate_reputation(
         self, valid: bool, line_type: str, carrier: Optional[str], location: Optional[str]
     ) -> float:
@@ -276,7 +365,7 @@ class PhoneIntelligence:
 
         Args:
             phone: Phone number to investigate
-            region: Default region code
+            region: Default region code (auto-detected if not provided)
 
         Returns:
             Phone intelligence result
@@ -297,6 +386,8 @@ class PhoneIntelligence:
                 formatted_national=phone,
                 formatted_e164=phone,
                 reputation_score=0.0,
+                associated_name=None,
+                associated_addresses=[],
                 metadata={},
                 checked_at=datetime.now(),
             )
@@ -311,7 +402,25 @@ class PhoneIntelligence:
         formatted_nat = self.format_number(parsed, "national")
         formatted_e164 = self.format_number(parsed, "e164")
 
-        social_platforms = await self.search_social_media(formatted_e164)
+        # Perform concurrent lookups
+        social_platforms_task = self.search_social_media(formatted_e164)
+        name_task = self.lookup_name(formatted_e164)
+        addresses_task = self.lookup_addresses(formatted_e164)
+
+        social_platforms, associated_name, associated_addresses = await asyncio.gather(
+            social_platforms_task,
+            name_task,
+            addresses_task,
+            return_exceptions=True
+        )
+
+        # Handle exceptions from gather
+        if isinstance(social_platforms, Exception):
+            social_platforms = []
+        if isinstance(associated_name, Exception):
+            associated_name = None
+        if isinstance(associated_addresses, Exception):
+            associated_addresses = []
 
         reputation = self.calculate_reputation(
             valid=True,
@@ -341,9 +450,12 @@ class PhoneIntelligence:
             formatted_national=formatted_nat,
             formatted_e164=formatted_e164,
             reputation_score=reputation,
+            associated_name=associated_name,
+            associated_addresses=associated_addresses,
             metadata={
                 "social_platforms": social_platforms,
                 "possible_voip": line_type == "voip",
+                "auto_detected_region": region is None,
             },
             checked_at=datetime.now(),
         )
