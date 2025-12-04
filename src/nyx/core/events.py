@@ -125,7 +125,12 @@ class EventBus:
                         handler(event)
                 except Exception as e:
                     # Log error but don't break event processing
-                    print(f"Error in event handler: {e}")
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(
+                        f"Error in event handler for {event.event_type}: {e}",
+                        exc_info=True
+                    )
 
         # Call wildcard handlers
         if "*" in self.subscribers:
@@ -136,7 +141,13 @@ class EventBus:
                     else:
                         handler(event)
                 except Exception as e:
-                    print(f"Error in event handler: {e}")
+                    # Log error but don't break event processing
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(
+                        f"Error in wildcard event handler: {e}",
+                        exc_info=True
+                    )
 
     async def run(self) -> None:
         """Run event loop. Should be called as background task."""

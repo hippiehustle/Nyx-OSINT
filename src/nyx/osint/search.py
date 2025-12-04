@@ -2,15 +2,23 @@
 
 import asyncio
 import time
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
+from nyx.config.base import load_config
 from nyx.core.cache import get_cache
-from nyx.core.events import SearchStartedEvent, SearchProgressEvent, SearchCompleteEvent, ProfileFoundEvent, get_event_bus
+from nyx.core.events import (
+    SearchStartedEvent,
+    SearchCompleteEvent,
+    ProfileFoundEvent,
+    get_event_bus,
+)
+from nyx.core.http_client import HTTPClient
 from nyx.core.logger import get_logger
 from nyx.core.types import PlatformMatch
-from nyx.models.platform import Platform, PlatformResult
+from nyx.models.platform import Platform
 from nyx.osint.checker import BasePlatformChecker, StatusCodeChecker
 from nyx.osint.platforms import get_platform_database
+from nyx.osint.plugin import get_plugin_registry
 
 logger = get_logger(__name__)
 
@@ -18,19 +26,47 @@ logger = get_logger(__name__)
 class SearchService:
     """Service for coordinating searches across multiple platforms."""
 
-    def __init__(self, max_concurrent_searches: int = 100, cache_enabled: bool = True):
+    def __init__(
+        self,
+        max_concurrent_searches: Optional[int] = None,
+        cache_enabled: bool = True,
+        http_client: Optional[HTTPClient] = None,
+    ):
         """Initialize search service.
 
         Args:
             max_concurrent_searches: Maximum concurrent platform checks
             cache_enabled: Whether to use caching
         """
-        self.max_concurrent_searches = max_concurrent_searches
+        # Load config to derive sane defaults when explicit values are not given
+        cfg = load_config()
+
+        self.max_concurrent_searches = (
+            max_concurrent_searches or cfg.http.max_concurrent_requests
+        )
         self.cache_enabled = cache_enabled
-        self.semaphore = asyncio.Semaphore(max_concurrent_searches)
+        self.semaphore = asyncio.Semaphore(self.max_concurrent_searches)
         self.platform_db = get_platform_database()
         self.cache = get_cache() if cache_enabled else None
         self.event_bus = get_event_bus()
+
+        # Shared HTTP client reused across all platform checks for connection reuse
+        # Note: rate_limit (requests/second) is separate from max_concurrent_requests
+        # Using a reasonable default of 10.0 requests/second to avoid overwhelming targets
+        self.http_client = http_client or HTTPClient(
+            timeout=cfg.http.timeout,
+            retries=cfg.http.retries,
+            rate_limit=10.0,  # Reasonable default: 10 requests/second
+            user_agent=cfg.http.user_agent,
+        )
+
+    async def aclose(self) -> None:
+        """Close underlying HTTP resources.
+
+        This should be called when the service is no longer needed to avoid
+        leaking open HTTP connections in long-running processes.
+        """
+        await self.http_client.close()
 
     def _get_cache_key(self, username: str, platform_name: str) -> str:
         """Generate cache key for search result.
@@ -71,12 +107,28 @@ class SearchService:
                     progress_callback(platform.name, "cached")
                 return cached_result
 
-        # Use provided checker or create default
+        # Use provided checker, plugin, or create default
         if not checker:
-            if platform.detection_method == "status_code":
-                checker = StatusCodeChecker(platform)
+            # Check for custom plugin first
+            plugin_registry = get_plugin_registry()
+            plugin = plugin_registry.find_plugin_for_platform(platform)
+            if plugin:
+                # Use plugin checker (wrap it to match BasePlatformChecker interface)
+                from nyx.osint.checker import BasePlatformChecker
+                
+                class PluginCheckerWrapper(BasePlatformChecker):
+                    def __init__(self, platform, plugin_instance, http_client=None):
+                        super().__init__(platform, http_client=http_client)
+                        self.plugin = plugin_instance
+                    
+                    async def check(self, username: str):
+                        return await self.plugin.check(username, self.platform)
+                
+                checker = PluginCheckerWrapper(platform, plugin, http_client=self.http_client)
+            elif platform.detection_method == "status_code":
+                checker = StatusCodeChecker(platform, http_client=self.http_client)
             else:
-                checker = StatusCodeChecker(platform)  # Default to status code
+                checker = StatusCodeChecker(platform, http_client=self.http_client)
 
         try:
             async with self.semaphore:
@@ -127,7 +179,10 @@ class SearchService:
         await self.event_bus.publish(
             SearchStartedEvent(
                 source="SearchService",
-                data={"username": username, "platform_count": len(self.platform_db.platforms)},
+                data={
+                    "username": username,
+                    "platform_count": len(self.platform_db.platforms),
+                },
             )
         )
 

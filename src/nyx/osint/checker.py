@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from nyx.core.http_client import HTTPClient
 from nyx.core.logger import get_logger
 from nyx.core.types import PlatformMatch
 from nyx.models.platform import Platform, PlatformResult
@@ -29,6 +30,7 @@ class BasePlatformChecker(ABC):
         timeout: int = 10,
         retries: int = 3,
         user_agent: Optional[str] = None,
+        http_client: Optional[HTTPClient] = None,
     ):
         """Initialize platform checker.
 
@@ -41,7 +43,11 @@ class BasePlatformChecker(ABC):
         self.platform = platform
         self.timeout = timeout or platform.timeout
         self.retries = retries
-        self.user_agent = user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nyx/0.1.0"
+        self.user_agent = (
+            user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Nyx/0.1.0"
+        )
+        # Optional shared HTTP client for better connection reuse
+        self.http_client = http_client
 
     @abstractmethod
     async def check(self, username: str) -> Optional[PlatformMatch]:
@@ -55,7 +61,13 @@ class BasePlatformChecker(ABC):
         """
         pass
 
-    async def _request(self, url: str, method: str = "GET", follow_redirects: bool = True, **kwargs) -> Optional[httpx.Response]:
+    async def _request(
+        self,
+        url: str,
+        method: str = "GET",
+        follow_redirects: bool = True,
+        **kwargs,
+    ) -> Optional[httpx.Response]:
         """Make HTTP request with retries.
 
         Args:
@@ -72,9 +84,23 @@ class BasePlatformChecker(ABC):
         if self.platform.headers:
             headers.update(self.platform.headers)
 
+        # Prefer shared HTTPClient if provided (better connection reuse and
+        # centralised rate limiting); otherwise fall back to local AsyncClient.
+        if self.http_client:
+            # HTTPClient already implements retries and backoff
+            return await self.http_client._request(  # type: ignore[attr-defined]
+                method,
+                url,
+                headers=headers,
+                follow_redirects=follow_redirects,
+                **kwargs,
+            )
+
         for attempt in range(self.retries):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=follow_redirects) as client:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout, follow_redirects=follow_redirects
+                ) as client:
                     response = await client.request(method, url, headers=headers, **kwargs)
                     return response
             except asyncio.TimeoutError:

@@ -75,7 +75,10 @@ class DatabaseManager:
             async with self.engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             return True
-        except Exception:
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Database health check failed: {e}", exc_info=False)
             return False
 
 

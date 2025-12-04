@@ -272,3 +272,11 @@ class BatchProcessor:
             List of batch jobs
         """
         return list(self.jobs.values())
+
+    async def aclose(self) -> None:
+        """Close underlying HTTP resources.
+
+        This should be called when the batch processor is no longer needed
+        to avoid leaking open HTTP connections.
+        """
+        await self.search_service.aclose()

@@ -290,18 +290,49 @@ class PhoneIntelligence:
             headers = {
                 "User-Agent": "Nyx-OSINT/0.1.0",
             }
-            # Note: In production, you'd need API keys for these services
-            # This is a placeholder implementation
-            response = await self.http_client.get(
-                f"https://api.numlookupapi.com/v1/validate/{phone}",
-                headers=headers,
-                timeout=10,
-            )
-            if response.status == 200:
-                data = await response.json()
-                return data.get("name") or data.get("carrier_name")
+            # NOTE: Reverse phone lookup requires API keys from services like:
+            # - NumLookupAPI (https://numlookupapi.com/ - requires API key)
+            # - WhitePages (https://www.whitepages.com/ - requires API key)
+            # - Spokeo (https://www.spokeo.com/ - requires API key)
+            # - TrueCaller (https://www.truecaller.com/ - requires API key)
+            #
+            # To enable this feature:
+            # 1. Obtain API key from a reverse lookup service
+            # 2. Add API key to configuration file (config/settings.yaml)
+            # 3. Update this method to use the configured API key
+            # 4. Handle rate limits and API quotas appropriately
+            #
+            # Example integration:
+            #   api_key = self.config.get("phone_lookup_api_key")
+            #   if api_key:
+            #       response = await self.http_client.get(
+            #           f"https://api.service.com/lookup/{phone}",
+            #           headers={**headers, "Authorization": f"Bearer {api_key}"},
+            #           timeout=10,
+            #       )
+            #       if response and response.status_code == 200:
+            #           data = response.json()
+            #           return data.get("name") or data.get("owner_name")
+            #
+            # For now, attempt public API (may fail without API key)
+            # This maintains API compatibility while allowing future integration
+            try:
+                response = await self.http_client.get(
+                    f"https://api.numlookupapi.com/v1/validate/{phone}",
+                    headers=headers,
+                    timeout=10,
+                )
+                if response and response.status_code == 200:
+                    data = response.json()
+                    return data.get("name") or data.get("carrier_name")
+            except Exception:
+                # Public API may not be available or may require authentication
+                logger.debug(
+                    f"Reverse phone name lookup unavailable for {phone}. "
+                    "API key required for full functionality."
+                )
         except Exception as e:
-            logger.debug(f"Name lookup failed: {e}")
+            logger.warning(f"Name lookup failed: {e}", exc_info=True)
 
         return None
 
@@ -317,14 +348,37 @@ class PhoneIntelligence:
         addresses = []
 
         try:
-            # Placeholder for reverse phone lookup services
-            # In production, integrate with services like:
-            # - WhitePages
-            # - Spokeo
-            # - BeenVerified
-            pass
+            # NOTE: Reverse phone address lookup requires API keys from services like:
+            # - WhitePages API (https://www.whitepages.com/ - requires API key)
+            # - Spokeo API (https://www.spokeo.com/ - requires API key)
+            # - BeenVerified API (https://www.beenverified.com/ - requires API key)
+            # - TruePeopleSearch (public, but may require scraping)
+            #
+            # To enable this feature:
+            # 1. Obtain API key from a reverse lookup service
+            # 2. Add API key to configuration file (config/settings.yaml)
+            # 3. Implement API client integration in this method
+            # 4. Parse and structure address data from API response
+            #
+            # Example integration structure:
+            #   api_key = self.config.get("phone_lookup_api_key")
+            #   if api_key:
+            #       response = await self.http_client.get(
+            #           f"https://api.service.com/lookup/{phone}",
+            #           headers={"Authorization": f"Bearer {api_key}"},
+            #           timeout=10,
+            #       )
+            #       if response and response.status_code == 200:
+            #           data = response.json()
+            #           addresses = self._parse_addresses_from_response(data)
+            #
+            logger.debug(
+                f"Reverse phone address lookup placeholder for {phone}. "
+                "API integration required for actual results."
+            )
+
         except Exception as e:
-            logger.debug(f"Address lookup failed: {e}")
+            logger.warning(f"Address lookup failed: {e}", exc_info=True)
 
         return addresses
 
