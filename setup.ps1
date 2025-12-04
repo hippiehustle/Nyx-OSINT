@@ -625,7 +625,7 @@ function Install-PlaywrightBrowsers {
                 # Check for success
                 if ($exitCode -eq 0) {
                     # Look for success indicators
-                    if ($playwrightOutput -match "(downloaded|chromium|successfully|Installing|✔)") {
+                    if ($playwrightOutput -match "(downloaded|chromium|successfully|Installing)") {
                         # Check for critical errors
                         if ($playwrightOutput -match "(FAILED|ERROR:.*failed|Cannot download)") {
                             Write-VerboseLog "Found error keywords in output"
@@ -934,7 +934,7 @@ function Show-Summary {
     Write-Host "     PS> nyx-cli --help"
     Write-Host ""
     Write-Host "  3. Search for a username:"
-    Write-Host "     PS> nyx-cli search <username>"
+    Write-Host "     PS> nyx-cli search username"
     Write-Host ""
     Write-Host "  4. Launch the GUI:"
     Write-Host "     PS> nyx"
