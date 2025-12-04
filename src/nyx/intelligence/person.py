@@ -90,18 +90,46 @@ class PersonIntelligence:
         # - PublicRecords.com
 
         try:
-            # Placeholder for public records API integration
             cache_key = f"person_records:{first}:{last}:{state or 'any'}"
             cached = await self.cache.get(cache_key)
             if cached:
                 return cached
 
-            # In production, make actual API calls here
-            # For now, return empty structure
+            # NOTE: Public records API integration requires API keys from services like:
+            # - TruePeopleSearch (https://www.truepeoplesearch.com/)
+            # - FastPeopleSearch (https://www.fastpeoplesearch.com/)
+            # - Whitepages (https://www.whitepages.com/ - requires API key)
+            # - Spokeo (https://www.spokeo.com/ - requires API key)
+            # - BeenVerified (https://www.beenverified.com/ - requires API key)
+            # - PublicRecords.com (https://www.publicrecords.com/ - requires API key)
+            #
+            # To enable this feature:
+            # 1. Obtain API keys from one or more of these services
+            # 2. Add API keys to configuration file (config/settings.yaml)
+            # 3. Implement API client integration in this method
+            # 4. Handle rate limits and API quotas appropriately
+            #
+            # Example integration structure:
+            #   api_key = self.config.get("public_records_api_key")
+            #   if api_key:
+            #       response = await self.http_client.get(
+            #           f"https://api.service.com/search",
+            #           params={"name": full_name, "state": state, "api_key": api_key}
+            #       )
+            #       if response and response.status_code == 200:
+            #           data = response.json()
+            #           records = self._parse_public_records_response(data)
+            #
+            # For now, return empty structure to maintain API compatibility
+            logger.debug(
+                f"Public records search placeholder: {full_name} "
+                f"(state={state or 'any'}). API integration required for actual results."
+            )
             await self.cache.set(cache_key, records, ttl=86400)
 
         except Exception as e:
-            logger.debug(f"Public records search failed: {e}")
+            logger.warning(f"Public records search failed: {e}", exc_info=True)
+            # Return empty structure on error to maintain API compatibility
 
         return records
 
@@ -158,6 +186,8 @@ class PersonIntelligence:
 
         except Exception as e:
             logger.debug(f"Social media search failed: {e}")
+        finally:
+            await search_service.aclose()
 
         return profiles
 
@@ -179,12 +209,36 @@ class PersonIntelligence:
         full_name = self.format_name(first, middle, last)
 
         try:
-            # Placeholder for LinkedIn, Indeed, Glassdoor searches
-            # In production, use APIs or scraping (with respect to ToS)
-            pass
+            # NOTE: Professional network search requires API access or web scraping:
+            # - LinkedIn: Requires LinkedIn API access (limited availability)
+            # - Indeed: Public search available, but API requires partnership
+            # - Glassdoor: Public search available, but API requires partnership
+            #
+            # To enable this feature:
+            # 1. For LinkedIn: Apply for LinkedIn API access (very limited)
+            # 2. For Indeed/Glassdoor: Consider web scraping with respect to ToS
+            # 3. Add API keys/credentials to configuration if available
+            # 4. Implement search logic with proper rate limiting
+            #
+            # Example integration structure:
+            #   linkedin_api_key = self.config.get("linkedin_api_key")
+            #   if linkedin_api_key:
+            #       results = await self._search_linkedin(full_name, linkedin_api_key)
+            #       employment.extend(results)
+            #
+            # Legal and ethical considerations:
+            # - Always respect Terms of Service
+            # - Implement rate limiting to avoid overwhelming services
+            # - Consider using official APIs when available
+            # - Be transparent about data sources in results
+            #
+            logger.debug(
+                f"Professional network search placeholder: {full_name}. "
+                "API integration required for actual results."
+            )
 
         except Exception as e:
-            logger.debug(f"Professional network search failed: {e}")
+            logger.warning(f"Professional network search failed: {e}", exc_info=True)
 
         return employment
 
@@ -205,12 +259,38 @@ class PersonIntelligence:
         associates = []
 
         try:
-            # Placeholder for relative/associate lookup
-            # In production, use public records services
-            pass
+            # NOTE: Relative/associate lookup requires public records API access:
+            # - WhitePages API (https://www.whitepages.com/ - requires API key)
+            # - Spokeo API (https://www.spokeo.com/ - requires API key)
+            # - BeenVerified API (https://www.beenverified.com/ - requires API key)
+            # - TruePeopleSearch (public, but may require scraping)
+            #
+            # To enable this feature:
+            # 1. Obtain API keys from public records services
+            # 2. Add API keys to configuration file
+            # 3. Implement API client integration
+            # 4. Parse and structure relative/associate data
+            #
+            # Example integration structure:
+            #   api_key = self.config.get("public_records_api_key")
+            #   if api_key and addresses:
+            #       for address in addresses:
+            #           response = await self.http_client.get(
+            #               f"https://api.service.com/relatives",
+            #               params={"name": f"{first} {last}", "address": address, "api_key": api_key}
+            #           )
+            #           if response and response.status_code == 200:
+            #               data = response.json()
+            #               relatives.extend(data.get("relatives", []))
+            #               associates.extend(data.get("associates", []))
+            #
+            logger.debug(
+                f"Relative/associate search placeholder: {first} {last} "
+                f"(addresses={len(addresses)}). API integration required for actual results."
+            )
 
         except Exception as e:
-            logger.debug(f"Relative/associate search failed: {e}")
+            logger.warning(f"Relative/associate search failed: {e}", exc_info=True)
 
         return relatives, associates
 

@@ -11,6 +11,83 @@
 
 ## Intelligence Modules
 
+### Smart Search
+
+#### `SmartSearchService`
+
+High-level orchestration service for free-form target information processing.
+
+```python
+from nyx.intelligence.smart import SmartSearchInput, SmartSearchService
+
+service = SmartSearchService()
+input_obj = SmartSearchInput(raw_text="John Doe @johndoe john@example.com", region="US")
+result = await service.smart_search(input_obj, persist_to_db=True)
+```
+
+**Methods:**
+
+- `smart_search(input: SmartSearchInput, timeout: Optional[int] = 120, persist_to_db: bool = False) -> SmartSearchResult` - Execute Smart search
+- `aclose() -> None` - Close underlying resources
+
+**SmartSearchInput:**
+
+```python
+@dataclass
+class SmartSearchInput:
+    raw_text: str
+    region: Optional[str] = None
+    usernames: List[str] = field(default_factory=list)
+    emails: List[str] = field(default_factory=list)
+    phones: List[str] = field(default_factory=list)
+    names: List[str] = field(default_factory=list)
+```
+
+**SmartSearchResult:**
+
+```python
+@dataclass
+class SmartSearchResult:
+    input: SmartSearchInput
+    identifiers: Dict[str, List[str]]
+    username_profiles: Dict[str, Profile]
+    email_results: Dict[str, Any]
+    phone_results: Dict[str, Any]
+    person_results: Dict[str, Any]
+    web_results: Dict[str, List[Dict[str, Any]]]
+    candidates: List[SmartCandidateProfile]
+```
+
+**SmartCandidateProfile:**
+
+```python
+@dataclass
+class SmartCandidateProfile:
+    identifier: str
+    identifier_type: str  # username, email, phone, name
+    data: Dict[str, Any]
+    confidence: float  # 0.0-1.0
+    reason: str
+```
+
+### Deep Investigation
+
+#### `DeepInvestigationService`
+
+Centralized service for comprehensive investigations.
+
+```python
+from nyx.intelligence.deep import DeepInvestigationService
+
+service = DeepInvestigationService()
+result = await service.investigate("query", region="US", timeout=120)
+```
+
+**Methods:**
+
+- `investigate(query: str, region: Optional[str] = None, timeout: Optional[int] = 120, include_smart: bool = True, include_web_search: bool = True) -> DeepInvestigationResult` - Perform deep investigation
+- `aclose() -> None` - Close underlying resources
+
 ### Email Intelligence
 
 #### `EmailIntelligence`

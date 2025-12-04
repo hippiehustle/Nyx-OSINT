@@ -162,6 +162,39 @@ Output includes:
 - Line type
 - Formatted numbers
 
+### Smart Search
+
+**Smart search from free-form text:**
+
+```bash
+poetry run nyx-cli smart "John Doe from NY uses handle @johnny_d on social and email john@example.com"
+```
+
+**With region hint:**
+
+```bash
+poetry run nyx-cli smart "Jane Smith 415-555-2671" --region US
+```
+
+**JSON output for automation:**
+
+```bash
+poetry run nyx-cli smart "target info" -o json
+```
+
+**Persist results to database:**
+
+```bash
+poetry run nyx-cli smart "target info" --persist
+```
+
+Smart search features:
+- Automatically extracts usernames, emails, phone numbers, and names
+- Runs all applicable intelligence modules in parallel
+- Performs web searches for additional context
+- Produces scored candidate profiles with confidence ratings
+- Optionally persists results to database for investigation tracking
+
 ### Platform Management
 
 **List all platforms:**

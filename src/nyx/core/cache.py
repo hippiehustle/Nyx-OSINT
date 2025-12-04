@@ -108,7 +108,10 @@ class DiskCacheBackend(CacheBackend):
                     return None
 
                 return data["value"]
-            except Exception:
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Failed to read cache file {cache_path}: {e}", exc_info=False)
                 return None
 
     async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:

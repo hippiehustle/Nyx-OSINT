@@ -10,6 +10,7 @@
 - **Phone Intelligence**: Auto-region detection, phone number parsing, validation, carrier lookup, location inference, line type detection, name/address association
 - **Person Lookup (WHOIS)**: Comprehensive person investigation by name and state - find addresses, phone numbers, relatives, associates, social profiles, and employment history
 - **Deep Investigation**: Unified comprehensive search that automatically detects query type and runs all applicable searches (username, email, phone, person)
+- **Smart Search**: Free-form input processing that extracts identifiers, runs intelligence modules, and produces scored candidate profiles with confidence scores
 - **Advanced Filtering**: 9 filter operators, query language, saved searches, batch processing
 - **Data Analysis**: Correlation analysis, relationship graphs, timeline analysis, pattern detection
 - **Profile Correlation**: Relationship analysis and profile linking with confidence scoring
@@ -22,6 +23,8 @@
 - **Type-Safe**: Full Pydantic V2 validation with mypy static type checking
 - **Privacy & Security**: Tor and proxy support, encrypted sensitive data storage
 - **Multiple Export Formats**: HTML, PDF, JSON, CSV with customizable templates
+- **Plugin System**: Extensible architecture for custom platform checkers
+- **Database Persistence**: Optional storage of investigation results for tracking and analysis
 
 ### User Interfaces
 - **Modern GUI**: Dark-themed CustomTkinter interface with responsive design

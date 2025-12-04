@@ -249,10 +249,10 @@ class EmailIntelligence:
 
         profiles = {}
 
-        try:
-            # Use the username search service to look for email-based profiles
-            search_service = SearchService()
+        # Use the username search service to look for email-based profiles
+        search_service = SearchService()
 
+        try:
             # Extract username from email (part before @)
             username = email.split('@')[0]
 
@@ -278,11 +278,18 @@ class EmailIntelligence:
                     )
                     if platform_results.get(platform_name, {}).get('found'):
                         profiles[platform_name] = platform_results[platform_name].get('url', '')
-                except Exception:
-                    pass
+                except Exception as platform_error:
+                    logger.debug(
+                        f"Failed to check {platform_name} for email {email}: {platform_error}",
+                        exc_info=False
+                    )
+                    # Continue with other platforms
+                    continue
 
         except Exception as e:
             logger.debug(f"Profile search failed for {email}: {e}")
+        finally:
+            await search_service.aclose()
 
         return profiles
 
