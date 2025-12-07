@@ -31,6 +31,14 @@ async def async_main(config_path: Optional[str] = None) -> None:
     logger.info(f"Nyx v0.1.0 started")
     logger.info(f"Configuration loaded: {config_path or 'default'}")
     logger.debug(f"Debug mode: {config.debug}")
+    
+    # Initialize database
+    try:
+        from nyx.core.database import ensure_database_initialized
+        await ensure_database_initialized(config)
+        logger.debug("Database initialized")
+    except Exception as e:
+        logger.warning(f"Database initialization failed: {e}", exc_info=True)
 
 
 def main(config_path: Optional[str] = None) -> None:

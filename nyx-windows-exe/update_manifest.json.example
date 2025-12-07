@@ -1,0 +1,17 @@
+{
+  "version": "0.1.1",
+  "release_date": "2025-01-15",
+  "channel": "stable",
+  "installer": {
+    "url": "https://github.com/owner/repo/releases/download/v0.1.1/nyx-installer-v0.1.1.exe",
+    "size": 12345678,
+    "checksum": "sha256:abc123def456...",
+    "filename": "nyx-installer-v0.1.1.exe"
+  },
+  "changelog": "Bug fixes and improvements:\n- Fixed issue with platform search\n- Improved error handling\n- Updated dependencies",
+  "release_notes": "Full release notes available at: https://github.com/owner/repo/releases/tag/v0.1.1",
+  "min_version": "0.1.0",
+  "critical": false,
+  "prerelease": false
+}
+

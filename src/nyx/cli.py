@@ -30,6 +30,37 @@ logger = get_logger(__name__)
 logging.getLogger("nyx.osint.search").setLevel(logging.WARNING)
 
 
+def _convert_config_value(value: str):
+    """Convert string value to appropriate type for config.
+    
+    Args:
+        value: String value to convert
+        
+    Returns:
+        Converted value (bool, int, float, or str)
+    """
+    # Try boolean
+    if value.lower() in ("true", "yes", "on", "1"):
+        return True
+    if value.lower() in ("false", "no", "off", "0"):
+        return False
+    
+    # Try integer
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    
+    # Try float
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    
+    # Return as string
+    return value
+
+
 # ============================================================================
 # Main CLI Group
 # ============================================================================
@@ -1611,13 +1642,14 @@ def targets(ctx, list_targets, create, category, delete):
       nyx-cli targets --delete 1
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.models.target import Target
         from sqlalchemy import select, delete as sql_delete
 
-        db_manager = get_database_manager()
-
         async def async_targets():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 if list_targets:
                     stmt = select(Target).order_by(Target.last_searched.desc())
@@ -1655,8 +1687,6 @@ def targets(ctx, list_targets, create, category, delete):
                 break
 
         asyncio.run(async_targets())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1702,12 +1732,11 @@ def export(ctx, target_id, export_format, output):
       nyx-cli export --target-id 1 --format pdf -o report.pdf
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.core.utils import sanitize_file_path
         from nyx.models.target import Target, TargetProfile
         from sqlalchemy import select
-
-        db_manager = get_database_manager()
 
         # Sanitize output path
         sanitized_path = sanitize_file_path(output)
@@ -1716,6 +1745,8 @@ def export(ctx, target_id, export_format, output):
             return
 
         async def async_export():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 if not target_id:
                     click.echo("❌ --target-id is required", err=True)
@@ -1789,8 +1820,6 @@ def export(ctx, target_id, export_format, output):
                 break
 
         asyncio.run(async_export())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1826,13 +1855,14 @@ def history(ctx, list_history, limit):
       nyx-cli history --list --limit 20
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.models.target import SearchHistory
         from sqlalchemy import select
 
-        db_manager = get_database_manager()
-
         async def async_history():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 stmt = select(SearchHistory).order_by(SearchHistory.timestamp.desc()).limit(limit)
                 result = await session.execute(stmt)
@@ -1856,8 +1886,6 @@ def history(ctx, list_history, limit):
                 break
 
         asyncio.run(async_history())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1902,10 +1930,452 @@ def config(ctx, show, set_key):
             click.echo(f"❌ Error: {e}", err=True)
 
     elif set_key:
-        click.echo("⚠️  Configuration editing via CLI not yet implemented.")
-        click.echo("   Please edit config/settings.yaml directly.")
+        try:
+            import yaml
+            from pathlib import Path
+            
+            if "=" not in set_key:
+                click.echo("❌ Invalid format. Use: key=value", err=True)
+                click.echo("   Example: nyx-cli config --set http.timeout=30")
+                return
+            
+            key, value = set_key.split("=", 1)
+            key_parts = key.split(".")
+            
+            config_path = ctx.obj.get("config_path") or "config/settings.yaml"
+            config_file = Path(config_path)
+            
+            if not config_file.exists():
+                click.echo(f"❌ Config file not found: {config_file}", err=True)
+                return
+            
+            # Load current config
+            with open(config_file, "r", encoding="utf-8") as f:
+                config_data = yaml.safe_load(f) or {}
+            
+            # Navigate to nested key
+            current = config_data
+            for part in key_parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            # Set value (try to convert to appropriate type)
+            final_key = key_parts[-1]
+            converted_value = _convert_config_value(value)
+            current[final_key] = converted_value
+            
+            # Save updated config
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+            
+            click.echo(f"✅ Set {key} = {converted_value}")
+            
+        except Exception as e:
+            click.echo(f"❌ Error setting configuration: {e}", err=True)
+            if ctx.obj.get("debug"):
+                import traceback
+                traceback.print_exc()
     else:
         click.echo(ctx.get_help())
+
+
+@cli.group()
+@click.pass_context
+def update(ctx):
+    """Update management commands.
+    
+    \b
+    Check for, download, and install Nyx updates.
+    """
+    ctx.ensure_object(dict)
+
+
+@update.command()
+@click.pass_context
+def check(ctx):
+    """Check for available updates."""
+    try:
+        import asyncio
+        from nyx.config.base import load_config
+        from nyx.config.updater_config import UpdaterConfig
+        from nyx.core.updater import UpdateChecker
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        
+        # Get updater config from main config or use defaults
+        updater_config = UpdaterConfig(
+            enabled=cfg.updater.enabled if hasattr(cfg, "updater") else True,
+            source=getattr(cfg.updater, "source", "github") if hasattr(cfg, "updater") else "github",
+            github_repo=getattr(cfg.updater, "github_repo", None) if hasattr(cfg, "updater") else None,
+            custom_url=getattr(cfg.updater, "custom_url", None) if hasattr(cfg, "updater") else None,
+            channel=getattr(cfg.updater, "channel", "stable") if hasattr(cfg, "updater") else "stable",
+        )
+        
+        async def check_updates():
+            checker = UpdateChecker(updater_config)
+            update_info = await checker.check_for_updates()
+            
+            if update_info:
+                click.echo(f"\n✅ Update available: {update_info['version']}")
+                click.echo(f"   Current version: {update_info['current_version']}")
+                if update_info.get("changelog"):
+                    click.echo(f"\n📝 Changelog:\n{update_info['changelog']}")
+                click.echo(f"\n💡 Run 'nyx-cli update download' to download the update")
+            else:
+                from nyx.core.version import get_current_version
+                current = str(get_current_version())
+                click.echo(f"\n✅ You are running the latest version: {current}")
+        
+        asyncio.run(check_updates())
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error checking for updates: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
+
+
+@update.command()
+@click.option("--output", "-o", help="Output path for downloaded installer", type=click.Path())
+@click.pass_context
+def download(ctx, output):
+    """Download available update."""
+    try:
+        import asyncio
+        from pathlib import Path
+        from nyx.config.base import load_config
+        from nyx.config.updater_config import UpdaterConfig
+        from nyx.core.updater import UpdateChecker, UpdateDownloader
+        from nyx.utils.update_utils import add_update_history_entry, format_file_size
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        
+        # Get updater config
+        updater_config = UpdaterConfig(
+            enabled=cfg.updater.enabled if hasattr(cfg, "updater") else True,
+            source=getattr(cfg.updater, "source", "github") if hasattr(cfg, "updater") else "github",
+            github_repo=getattr(cfg.updater, "github_repo", None) if hasattr(cfg, "updater") else None,
+            custom_url=getattr(cfg.updater, "custom_url", None) if hasattr(cfg, "updater") else None,
+            channel=getattr(cfg.updater, "channel", "stable") if hasattr(cfg, "updater") else "stable",
+        )
+        
+        async def download_update():
+            # First check for updates
+            checker = UpdateChecker(updater_config)
+            update_info = await checker.check_for_updates()
+            
+            if not update_info:
+                from nyx.core.version import get_current_version
+                current = str(get_current_version())
+                click.echo(f"✅ You are running the latest version: {current}")
+                return
+            
+            click.echo(f"\n📥 Downloading update {update_info['version']}...")
+            
+            # Determine destination
+            destination = None
+            if output:
+                destination = Path(output)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Download with progress
+            downloader = UpdateDownloader(updater_config)
+            
+            def progress_callback(downloaded: int, total: int):
+                if total > 0:
+                    percent = (downloaded / total) * 100
+                    size_str = format_file_size(downloaded)
+                    total_str = format_file_size(total)
+                    click.echo(f"\r   Progress: {percent:.1f}% ({size_str} / {total_str})", nl=False)
+            
+            downloader.set_progress_callback(progress_callback)
+            
+            installer_path = await downloader.download_update(update_info, destination)
+            
+            if installer_path:
+                click.echo(f"\n✅ Update downloaded successfully: {installer_path}")
+                add_update_history_entry(
+                    update_info['version'],
+                    "download",
+                    True,
+                    {"path": str(installer_path)}
+                )
+                click.echo(f"\n💡 Run 'nyx-cli update install' to install the update")
+            else:
+                click.echo("\n❌ Download failed. Check logs for details.", err=True)
+                add_update_history_entry(
+                    update_info.get('version', 'unknown'),
+                    "download",
+                    False
+                )
+        
+        asyncio.run(download_update())
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error downloading update: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
+
+
+@update.command()
+@click.option("--installer", "-i", help="Path to installer file", type=click.Path(exists=True))
+@click.option("--silent", "-s", is_flag=True, help="Install silently (no prompts)")
+@click.pass_context
+def install(ctx, installer, silent):
+    """Install downloaded update."""
+    try:
+        import asyncio
+        from pathlib import Path
+        from nyx.config.base import load_config
+        from nyx.config.updater_config import UpdaterConfig
+        from nyx.core.updater import UpdateChecker, UpdateDownloader, UpdateInstaller
+        from nyx.utils.update_utils import add_update_history_entry
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        
+        # Get updater config
+        updater_config = UpdaterConfig(
+            enabled=cfg.updater.enabled if hasattr(cfg, "updater") else True,
+            source=getattr(cfg.updater, "source", "github") if hasattr(cfg, "updater") else "github",
+            github_repo=getattr(cfg.updater, "github_repo", None) if hasattr(cfg, "updater") else None,
+            custom_url=getattr(cfg.updater, "custom_url", None) if hasattr(cfg, "updater") else None,
+            channel=getattr(cfg.updater, "channel", "stable") if hasattr(cfg, "updater") else "stable",
+        )
+        
+        async def install_update():
+            installer_path = None
+            
+            if installer:
+                installer_path = Path(installer)
+            else:
+                # Try to find downloaded installer
+                import tempfile
+                temp_dir = Path(tempfile.gettempdir()) / "Nyx" / "updates"
+                if temp_dir.exists():
+                    # Find latest .exe file
+                    exe_files = list(temp_dir.glob("*.exe"))
+                    if exe_files:
+                        installer_path = max(exe_files, key=lambda p: p.stat().st_mtime)
+            
+            if not installer_path or not installer_path.exists():
+                click.echo("❌ No installer found. Please download an update first:", err=True)
+                click.echo("   nyx-cli update download")
+                click.echo("   Or specify installer path: nyx-cli update install --installer <path>")
+                return
+            
+            # Confirm installation
+            if not silent:
+                click.echo(f"\n⚠️  This will install update from: {installer_path}")
+                if not click.confirm("Do you want to continue?"):
+                    click.echo("Installation cancelled.")
+                    return
+            
+            click.echo(f"\n🔧 Installing update from {installer_path}...")
+            
+            installer_obj = UpdateInstaller(updater_config)
+            success = await installer_obj.install_update(installer_path, silent=silent)
+            
+            if success:
+                click.echo("✅ Update installed successfully!")
+                add_update_history_entry(
+                    installer_path.stem,  # Use filename as version identifier
+                    "install",
+                    True,
+                    {"path": str(installer_path)}
+                )
+                click.echo("\n💡 Please restart the application to use the new version.")
+            else:
+                click.echo("❌ Installation failed. Check logs for details.", err=True)
+                add_update_history_entry(
+                    installer_path.stem,
+                    "install",
+                    False
+                )
+        
+        asyncio.run(install_update())
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error installing update: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
+
+
+@update.command()
+@click.pass_context
+def status(ctx):
+    """Show update status."""
+    try:
+        from nyx.core.version import get_current_version
+        from nyx.utils.update_utils import get_last_update_check, get_last_installed_version
+        
+        current = str(get_current_version())
+        click.echo(f"Current version: {current}")
+        
+        last_check = get_last_update_check()
+        if last_check:
+            click.echo(f"Last check: {last_check}")
+        else:
+            click.echo("Last check: Never")
+        
+        last_installed = get_last_installed_version()
+        if last_installed:
+            click.echo(f"Last installed: {last_installed}")
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+
+
+@update.command()
+@click.option("--enabled/--disabled", help="Enable or disable auto-updater")
+@click.option("--source", type=click.Choice(["github", "custom", "disabled"]), help="Update source")
+@click.option("--github-repo", help="GitHub repository (owner/repo)")
+@click.option("--custom-url", help="Custom update server URL")
+@click.option("--check-on-startup/--no-check-on-startup", help="Check for updates on startup")
+@click.option("--frequency", type=click.Choice(["on_startup", "daily", "weekly", "manual_only"]), help="Check frequency")
+@click.option("--auto-download/--no-auto-download", help="Automatically download updates")
+@click.option("--auto-install/--no-auto-install", help="Automatically install updates")
+@click.option("--channel", type=click.Choice(["stable", "beta", "alpha"]), help="Update channel")
+@click.pass_context
+def settings(ctx, enabled, source, github_repo, custom_url, check_on_startup, frequency, auto_download, auto_install, channel):
+    """Configure update settings."""
+    try:
+        from nyx.config.base import load_config, Config
+        import yaml
+        from pathlib import Path
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        config_path = ctx.obj.get("config_path") or "config/settings.yaml"
+        config_file = Path(config_path)
+        
+        if not config_file.exists():
+            click.echo(f"❌ Config file not found: {config_file}", err=True)
+            return
+        
+        # Load current config
+        with open(config_file, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        # Initialize updater section if needed
+        if "updater" not in config_data:
+            config_data["updater"] = {}
+        
+        updater = config_data["updater"]
+        
+        # Update values if provided
+        if enabled is not None:
+            updater["enabled"] = enabled
+        if source:
+            updater["source"] = source
+        if github_repo is not None:
+            updater["github_repo"] = github_repo if github_repo else None
+        if custom_url is not None:
+            updater["custom_url"] = custom_url if custom_url else None
+        if check_on_startup is not None:
+            updater["check_on_startup"] = check_on_startup
+        if frequency:
+            updater["check_frequency"] = frequency
+        if auto_download is not None:
+            updater["auto_download"] = auto_download
+        if auto_install is not None:
+            updater["auto_install"] = auto_install
+        if channel:
+            updater["channel"] = channel
+        
+        # Save updated config
+        with open(config_file, "w", encoding="utf-8") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        
+        click.echo("✅ Update settings saved successfully!")
+        click.echo(f"\nCurrent settings:")
+        click.echo(f"  Enabled: {updater.get('enabled', True)}")
+        click.echo(f"  Source: {updater.get('source', 'github')}")
+        click.echo(f"  GitHub Repo: {updater.get('github_repo', 'None')}")
+        click.echo(f"  Custom URL: {updater.get('custom_url', 'None')}")
+        click.echo(f"  Check on Startup: {updater.get('check_on_startup', True)}")
+        click.echo(f"  Frequency: {updater.get('check_frequency', 'daily')}")
+        click.echo(f"  Auto Download: {updater.get('auto_download', False)}")
+        click.echo(f"  Auto Install: {updater.get('auto_install', False)}")
+        click.echo(f"  Channel: {updater.get('channel', 'stable')}")
+        
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error configuring settings: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
+
+
+@update.command()
+@click.argument("version")
+@click.option("--remove", "-r", is_flag=True, help="Remove version from skip list")
+@click.pass_context
+def skip(ctx, version, remove):
+    """Skip a specific version from updates."""
+    try:
+        from nyx.config.base import load_config
+        import yaml
+        from pathlib import Path
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        config_path = ctx.obj.get("config_path") or "config/settings.yaml"
+        config_file = Path(config_path)
+        
+        if not config_file.exists():
+            click.echo(f"❌ Config file not found: {config_file}", err=True)
+            return
+        
+        # Load current config
+        with open(config_file, "r", encoding="utf-8") as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        # Initialize updater section if needed
+        if "updater" not in config_data:
+            config_data["updater"] = {}
+        
+        updater = config_data["updater"]
+        
+        # Initialize skip_versions if needed
+        if "skip_versions" not in updater:
+            updater["skip_versions"] = []
+        
+        skip_versions = updater["skip_versions"]
+        
+        if remove:
+            if version in skip_versions:
+                skip_versions.remove(version)
+                click.echo(f"✅ Removed {version} from skip list")
+            else:
+                click.echo(f"⚠️  Version {version} is not in skip list")
+        else:
+            if version not in skip_versions:
+                skip_versions.append(version)
+                click.echo(f"✅ Added {version} to skip list")
+            else:
+                click.echo(f"⚠️  Version {version} is already in skip list")
+        
+        updater["skip_versions"] = skip_versions
+        
+        # Save updated config
+        with open(config_file, "w", encoding="utf-8") as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        
+        click.echo(f"\nSkipped versions: {', '.join(skip_versions) if skip_versions else 'None'}")
+        
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
 
 
 if __name__ == "__main__":

@@ -87,16 +87,78 @@ _db_manager: Optional[DatabaseManager] = None
 
 
 def get_database_manager() -> DatabaseManager:
-    """Get global database manager."""
+    """Get global database manager.
+    
+    Note: Database must be initialized first using initialize_database() or ensure_database_initialized().
+    For async contexts, use get_database_manager_async() instead.
+    """
     global _db_manager
     if _db_manager is None:
-        raise RuntimeError("Database manager not initialized")
+        raise RuntimeError(
+            "Database manager not initialized. "
+            "Call initialize_database() or ensure_database_initialized() first."
+        )
     return _db_manager
+
+
+async def get_database_manager_async(config=None) -> DatabaseManager:
+    """Get database manager, initializing if necessary (async-safe).
+    
+    Args:
+        config: Optional Config object
+        
+    Returns:
+        DatabaseManager instance
+    """
+    return await ensure_database_initialized(config)
 
 
 async def initialize_database(database_url: str, echo: bool = False) -> DatabaseManager:
     """Initialize and return global database manager."""
     global _db_manager
+    
+    # Resolve database URL if it's SQLite and resource paths are available
+    if "sqlite" in database_url:
+        try:
+            from nyx.core.resource_paths import get_database_path
+            db_path = get_database_path()
+            # Convert to absolute path for SQLite
+            database_url = f"sqlite:///{db_path.absolute()}"
+        except ImportError:
+            # Resource paths not available, use original URL
+            pass
+    
     _db_manager = DatabaseManager(database_url, echo=echo)
     await _db_manager.initialize()
     return _db_manager
+
+
+async def ensure_database_initialized(config=None) -> DatabaseManager:
+    """Ensure database is initialized, initializing if necessary.
+    
+    Args:
+        config: Optional Config object. If provided, uses config.database settings.
+        
+    Returns:
+        DatabaseManager instance
+    """
+    global _db_manager
+    
+    if _db_manager is not None:
+        return _db_manager
+    
+    # Initialize from config if provided
+    if config:
+        database_url = config.database.get_resolved_url()
+        echo = config.database.echo
+    else:
+        # Use default
+        try:
+            from nyx.core.resource_paths import get_database_path
+            db_path = get_database_path()
+            database_url = f"sqlite:///{db_path.absolute()}"
+        except ImportError:
+            database_url = "sqlite:///./nyx.db"
+        echo = False
+    
+    return await initialize_database(database_url, echo=echo)

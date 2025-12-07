@@ -18,6 +18,24 @@ class DatabaseConfig(BaseModel):
     pool_size: int = Field(default=20, description="Connection pool size")
     max_overflow: int = Field(default=40, description="Maximum overflow connections")
     echo: bool = Field(default=False, description="Echo SQL statements")
+    
+    def get_resolved_url(self) -> str:
+        """Get database URL with resolved path for executables.
+        
+        Returns:
+            Resolved database URL
+        """
+        if self.url.startswith("sqlite:///"):
+            # Try to use resource paths if available
+            try:
+                from nyx.core.resource_paths import get_database_path
+                db_path = get_database_path()
+                # Convert to absolute path for SQLite
+                return f"sqlite:///{db_path.absolute()}"
+            except ImportError:
+                # Fall back to original URL
+                pass
+        return self.url
 
 
 class HTTPConfig(BaseModel):
@@ -123,6 +141,24 @@ class Config(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     tor: TorConfig = Field(default_factory=TorConfig)
+    
+    # Updater config (optional, with defaults)
+    updater: Optional["UpdaterConfig"] = Field(default=None, description="Update configuration")
+    
+    def __init__(self, **data):
+        """Initialize config with optional updater."""
+        # Import here to avoid circular dependency
+        try:
+            from nyx.config.updater_config import UpdaterConfig
+        except ImportError:
+            # UpdaterConfig not available (e.g., in some builds)
+            UpdaterConfig = None
+        
+        # Set default updater if not provided
+        if "updater" not in data and UpdaterConfig:
+            data["updater"] = UpdaterConfig()
+        
+        super().__init__(**data)
 
     @classmethod
     def from_yaml(cls, path: str) -> "Config":
@@ -168,14 +204,33 @@ def load_config(config_path: Optional[str] = None) -> Config:
         elif config_path.endswith(".json"):
             return Config.from_json(config_path)
 
-    # Try default locations
-    default_yaml = Path("config/settings.yaml")
-    default_json = Path("config/settings.json")
+    # Try to use resource path utilities if available (executable mode)
+    try:
+        from nyx.core.resource_paths import get_config_path, get_resource_path
+        
+        # Try bundled config first
+        bundled_config = get_resource_path("config/settings.yaml")
+        if bundled_config.exists():
+            return Config.from_yaml(str(bundled_config))
+        
+        # Try config directory
+        config_dir = get_config_path()
+        default_yaml = config_dir / "settings.yaml"
+        default_json = config_dir / "settings.json"
+        
+        if default_yaml.exists():
+            return Config.from_yaml(str(default_yaml))
+        elif default_json.exists():
+            return Config.from_json(str(default_json))
+    except ImportError:
+        # Development mode: use relative paths
+        default_yaml = Path("config/settings.yaml")
+        default_json = Path("config/settings.json")
 
-    if default_yaml.exists():
-        return Config.from_yaml(str(default_yaml))
-    elif default_json.exists():
-        return Config.from_json(str(default_json))
+        if default_yaml.exists():
+            return Config.from_yaml(str(default_yaml))
+        elif default_json.exists():
+            return Config.from_json(str(default_json))
 
     # Fall back to environment variables or defaults
     return Config.from_env()

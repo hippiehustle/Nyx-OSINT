@@ -56,12 +56,20 @@ def setup_logging(
     backup_count: int = 5,
 ) -> None:
     """Configure structlog and standard logging."""
-    log_path = Path(log_file)
+    # Try to use resource paths if available (executable mode)
+    try:
+        from nyx.core.resource_paths import get_log_path
+        log_dir = get_log_path()
+        log_path = log_dir / Path(log_file).name
+    except ImportError:
+        # Development mode: use provided path
+        log_path = Path(log_file)
+    
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Configure standard logging for libraries
     stdlib_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=max_file_size, backupCount=backup_count
+        str(log_path), maxBytes=max_file_size, backupCount=backup_count
     )
     stdlib_handler.setFormatter(
         logging.Formatter(

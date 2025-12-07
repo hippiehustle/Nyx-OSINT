@@ -3974,13 +3974,23 @@ class PlatformDatabase:
         supporting the complete 2000+ platform catalog.
         """
         import json
+        import sys
         from pathlib import Path
 
         loaded_count = 0
 
-        # Get the data directory path
-        # From: src/nyx/osint/platforms.py -> project_root/data/platforms
-        data_dir = Path(__file__).parent.parent.parent.parent / "data" / "platforms"
+        # Try to use resource path utilities if available (executable mode)
+        # Otherwise fall back to relative paths (development mode)
+        try:
+            from nyx.core.resource_paths import get_resource_path, get_data_path
+            # Try bundled resources first
+            data_dir = get_resource_path("data/platforms")
+            if not data_dir.exists():
+                # Fall back to data directory
+                data_dir = get_data_path() / "platforms"
+        except ImportError:
+            # Development mode: use relative paths
+            data_dir = Path(__file__).parent.parent.parent.parent / "data" / "platforms"
 
         if not data_dir.exists():
             logger.warning(f"Platform data directory not found: {data_dir}")
