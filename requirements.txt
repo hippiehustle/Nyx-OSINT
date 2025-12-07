@@ -1,0 +1,55 @@
+# Core async/HTTP
+aiohttp>=3.9.0
+httpx>=0.24.0
+
+# GUI
+customtkinter>=5.2.0
+pillow>=10.0.0
+
+# Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+alembic>=1.12.0
+
+# Data Processing & Analysis
+pandas>=2.1.0
+numpy>=1.26.0
+pydantic>=2.5.0
+
+# Web Scraping
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+playwright>=1.40.0
+
+# Image & Text Recognition
+pytesseract>=0.3.10
+opencv-python>=4.8.0
+
+# Phone Number Handling
+phonenumbers>=8.13.0
+
+# Export Formats
+jinja2>=3.1.0
+reportlab>=4.0.0
+openpyxl>=3.1.0
+
+# Visualization & Maps
+matplotlib>=3.7.0
+plotly>=5.17.0
+folium>=0.14.0
+
+# Anonymity & Privacy
+stem>=1.8.2
+pysocks>=1.7.1
+
+# Utilities
+click>=8.1.0
+cryptography>=41.0.0
+python-dotenv>=1.0.0
+structlog>=23.2.0
+tqdm>=4.66.0
+colorama>=0.4.6
+cachetools>=5.3.0
+zstandard>=0.21.0
+faker>=19.0.0
+

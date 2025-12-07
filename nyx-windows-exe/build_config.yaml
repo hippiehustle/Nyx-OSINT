@@ -1,0 +1,79 @@
+# Build configuration for Nyx Windows Executable
+
+version: "0.1.0"
+build_date: null  # Auto-filled during build
+
+# Build options
+build_onefile: true
+build_folder: true
+build_launcher: true
+
+# Output directories
+build_dir: "build"
+dist_dir: "dist"
+
+# Icon paths (optional)
+icon_gui: null  # Path to .ico file for GUI executable
+icon_cli: null  # Path to .ico file for CLI executable
+
+# Included modules (additional to auto-detected)
+include_modules:
+  - nyx
+  - customtkinter
+  - PIL
+  - sqlalchemy
+  - aiosqlite
+  - httpx
+  - aiohttp
+
+# Excluded modules (to reduce size)
+exclude_modules:
+  - pytest
+  - pytest_*
+  - black
+  - isort
+  - flake8
+  - mypy
+  - bandit
+  - test
+  - tests
+
+# Hidden imports (modules that PyInstaller might miss)
+hidden_imports:
+  - _cffi_backend
+  - cryptography.hazmat.backends.openssl.backend
+  - sqlalchemy.dialects.sqlite
+  - aiosqlite
+  - customtkinter
+  - PIL._tkinter_finder
+  - playwright
+  - playwright._impl._driver
+
+# Data files to bundle
+data_files:
+  - source: "../data/platforms"
+    destination: "data/platforms"
+  - source: "../config/settings.yaml"
+    destination: "config/settings.yaml"
+
+# Binary includes (DLLs, etc.)
+binaries: []
+
+# Update configuration
+update:
+  enabled: true
+  github_repo: null  # Set to "owner/repo" for GitHub Releases
+  custom_url: null  # Set to custom update server URL
+  channel: "stable"  # stable, beta, alpha
+
+# Compression
+upx: false  # Use UPX compression (requires UPX installed)
+upx_exclude: []
+
+# Additional options
+console: false  # For GUI (set to true for CLI)
+onefile: true
+onedir: false
+noupx: false
+debug: false
+

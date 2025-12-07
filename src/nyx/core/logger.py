@@ -69,7 +69,7 @@ def setup_logging(
 
     # Configure standard logging for libraries
     stdlib_handler = logging.handlers.RotatingFileHandler(
-        log_file, maxBytes=max_file_size, backupCount=backup_count
+        str(log_path), maxBytes=max_file_size, backupCount=backup_count
     )
     stdlib_handler.setFormatter(
         logging.Formatter(
