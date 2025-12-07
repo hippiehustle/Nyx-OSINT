@@ -101,6 +101,28 @@ The setup wizard will:
 
 ---
 
+### Windows Executable Version
+
+A standalone Windows executable version is available in the `nyx-windows-exe/` directory.
+
+**Features:**
+- Single-file or folder-based distribution
+- Separate GUI and CLI executables
+- Combined launcher (auto-detects GUI/CLI mode)
+- Built-in auto-updater
+- Full feature parity with Python version
+- No Python installation required
+
+**Quick Build:**
+```powershell
+cd nyx-windows-exe
+.\build.bat
+```
+
+**See [nyx-windows-exe/README.md](nyx-windows-exe/README.md) for detailed build instructions.**
+
+---
+
 ### Manual Installation
 
 If you prefer manual setup:

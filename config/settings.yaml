@@ -52,3 +52,15 @@ tor:
   control_host: 127.0.0.1
   control_port: 9051
   use_new_identity: false
+
+updater:
+  enabled: true
+  source: github
+  github_repo: null
+  custom_url: null
+  check_on_startup: true
+  check_frequency: daily
+  auto_download: false
+  auto_install: false
+  channel: stable
+  skip_versions: []

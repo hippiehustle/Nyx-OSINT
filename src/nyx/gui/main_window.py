@@ -644,6 +644,10 @@ class MainWindow(ctk.CTk):
         proxy_tab = settings_notebook.add("Proxy/Tor")
         self._create_proxy_settings(proxy_tab)
 
+        # Updates tab
+        update_tab = settings_notebook.add("Updates")
+        self._create_update_settings(update_tab)
+
         # Save button
         save_btn = ctk.CTkButton(
             self.main_content,
@@ -766,18 +770,219 @@ class MainWindow(ctk.CTk):
         self.tor_port_entry.insert(0, "9051")
         self.tor_port_entry.pack(side="left", padx=5)
 
+    def _create_update_settings(self, parent) -> None:
+        """Create update settings panel."""
+        try:
+            from nyx.core.version import get_current_version
+            from nyx.config.updater_config import UpdaterConfig
+            
+            current_version = str(get_current_version())
+            
+            # Current version display
+            version_frame = ctk.CTkFrame(parent)
+            version_frame.pack(fill="x", padx=10, pady=10)
+            
+            version_label = ctk.CTkLabel(
+                version_frame,
+                text=f"Current Version: {current_version}",
+                font=("Helvetica", 14, "bold"),
+            )
+            version_label.pack(pady=5)
+            
+            # Update status
+            self.update_status_label = ctk.CTkLabel(
+                version_frame,
+                text="Status: Checking...",
+                font=("Helvetica", 11),
+            )
+            self.update_status_label.pack(pady=5)
+            
+            # Check for updates button
+            check_btn = ctk.CTkButton(
+                version_frame,
+                text="🔍 Check for Updates",
+                command=self._check_for_updates,
+                width=200,
+            )
+            check_btn.pack(pady=10)
+            
+            # Update settings
+            settings_label = ctk.CTkLabel(
+                parent,
+                text="Update Settings",
+                font=("Helvetica", 12, "bold"),
+            )
+            settings_label.pack(pady=(20, 5))
+            
+            # Auto-check on startup
+            auto_check_frame = ctk.CTkFrame(parent)
+            auto_check_frame.pack(fill="x", padx=10, pady=5)
+            
+            self.auto_check_var = ctk.BooleanVar(value=True)
+            auto_check_cb = ctk.CTkCheckbox(
+                auto_check_frame,
+                text="Check for updates on startup",
+                variable=self.auto_check_var,
+            )
+            auto_check_cb.pack(side="left", padx=5)
+            
+            # Check frequency
+            frequency_frame = ctk.CTkFrame(parent)
+            frequency_frame.pack(fill="x", padx=10, pady=5)
+            
+            frequency_label = ctk.CTkLabel(
+                frequency_frame,
+                text="Check Frequency:",
+                font=("Helvetica", 12),
+            )
+            frequency_label.pack(side="left", padx=5)
+            
+            self.frequency_var = ctk.StringVar(value="daily")
+            frequency_options = ["on_startup", "daily", "weekly", "manual_only"]
+            frequency_menu = ctk.CTkOptionMenu(
+                frequency_frame,
+                values=["On Startup", "Daily", "Weekly", "Manual Only"],
+                variable=self.frequency_var,
+                width=150,
+            )
+            frequency_menu.pack(side="left", padx=5)
+            
+            # Auto-download
+            auto_download_frame = ctk.CTkFrame(parent)
+            auto_download_frame.pack(fill="x", padx=10, pady=5)
+            
+            self.auto_download_var = ctk.BooleanVar(value=False)
+            auto_download_cb = ctk.CTkCheckbox(
+                auto_download_frame,
+                text="Automatically download updates",
+                variable=self.auto_download_var,
+            )
+            auto_download_cb.pack(side="left", padx=5)
+            
+            # Auto-install
+            auto_install_frame = ctk.CTkFrame(parent)
+            auto_install_frame.pack(fill="x", padx=10, pady=5)
+            
+            self.auto_install_var = ctk.BooleanVar(value=False)
+            auto_install_cb = ctk.CTkCheckbox(
+                auto_install_frame,
+                text="Automatically install updates (requires confirmation)",
+                variable=self.auto_install_var,
+            )
+            auto_install_cb.pack(side="left", padx=5)
+            
+            # Update channel
+            channel_frame = ctk.CTkFrame(parent)
+            channel_frame.pack(fill="x", padx=10, pady=5)
+            
+            channel_label = ctk.CTkLabel(
+                channel_frame,
+                text="Update Channel:",
+                font=("Helvetica", 12),
+            )
+            channel_label.pack(side="left", padx=5)
+            
+            self.channel_var = ctk.StringVar(value="stable")
+            channel_menu = ctk.CTkOptionMenu(
+                channel_frame,
+                values=["Stable", "Beta", "Alpha"],
+                variable=self.channel_var,
+                width=150,
+            )
+            channel_menu.pack(side="left", padx=5)
+            
+            # Release notes display area
+            notes_label = ctk.CTkLabel(
+                parent,
+                text="Release Notes",
+                font=("Helvetica", 12, "bold"),
+            )
+            notes_label.pack(pady=(20, 5))
+            
+            self.release_notes_text = ctk.CTkTextbox(parent, height=150)
+            self.release_notes_text.pack(fill="both", expand=True, padx=10, pady=5)
+            self.release_notes_text.insert("1.0", "No update information available.")
+            self.release_notes_text.configure(state="disabled")
+            
+        except ImportError:
+            # Update functionality not available
+            info_label = ctk.CTkLabel(
+                parent,
+                text="Update functionality not available in this build",
+                font=("Helvetica", 11),
+            )
+            info_label.pack(pady=20)
+
+    def _check_for_updates(self) -> None:
+        """Check for available updates."""
+        try:
+            import asyncio
+            from nyx.config.updater_config import UpdaterConfig
+            from nyx.core.updater import UpdateChecker
+            
+            self.update_status_label.configure(text="Status: Checking for updates...")
+            
+            # Get updater config
+            updater_config = UpdaterConfig(
+                enabled=True,
+                source="github",
+                check_on_startup=self.auto_check_var.get(),
+                check_frequency=self.frequency_var.get(),
+                auto_download=self.auto_download_var.get(),
+                auto_install=self.auto_install_var.get(),
+                channel=self.channel_var.get().lower(),
+            )
+            
+            async def check():
+                checker = UpdateChecker(updater_config)
+                update_info = await checker.check_for_updates()
+                
+                if update_info:
+                    self.update_status_label.configure(
+                        text=f"Status: Update available - {update_info['version']}"
+                    )
+                    notes = update_info.get("changelog", "No changelog available.")
+                    self.release_notes_text.configure(state="normal")
+                    self.release_notes_text.delete("1.0", "end")
+                    self.release_notes_text.insert("1.0", notes)
+                    self.release_notes_text.configure(state="disabled")
+                else:
+                    from nyx.core.version import get_current_version
+                    current = str(get_current_version())
+                    self.update_status_label.configure(
+                        text=f"Status: Up to date ({current})"
+                    )
+                    self.release_notes_text.configure(state="normal")
+                    self.release_notes_text.delete("1.0", "end")
+                    self.release_notes_text.insert("1.0", "You are running the latest version.")
+                    self.release_notes_text.configure(state="disabled")
+            
+            # Run in background thread
+            thread = threading.Thread(
+                target=lambda: asyncio.run(check()),
+                daemon=True,
+            )
+            thread.start()
+            
+        except ImportError:
+            self.update_status_label.configure(text="Status: Update functionality not available")
+        except Exception as e:
+            logger.error(f"Error checking for updates: {e}", exc_info=True)
+            self.update_status_label.configure(text=f"Status: Error - {str(e)}")
+
     def _refresh_targets(self) -> None:
         """Refresh targets list from database."""
         try:
-            from nyx.core.database import get_database_manager
+            from nyx.core.database import ensure_database_initialized, get_database_manager
             from nyx.models.target import Target
             from sqlalchemy import select
 
-            db_manager = get_database_manager()
-            targets_text = "Targets:\n" + "=" * 80 + "\n\n"
-
             async def fetch_targets():
-                nonlocal targets_text
+                # Ensure database is initialized
+                await ensure_database_initialized(self.config)
+                db_manager = get_database_manager()
+                targets_text = "Targets:\n" + "=" * 80 + "\n\n"
+                
                 async for session in db_manager.get_session():
                     stmt = select(Target).order_by(Target.last_searched.desc()).limit(50)
                     result = await session.execute(stmt)
@@ -811,15 +1016,16 @@ class MainWindow(ctk.CTk):
     def _refresh_results(self) -> None:
         """Refresh search history from database."""
         try:
-            from nyx.core.database import get_database_manager
+            from nyx.core.database import ensure_database_initialized, get_database_manager
             from nyx.models.target import SearchHistory
             from sqlalchemy import select
 
-            db_manager = get_database_manager()
-            results_text = "Search History:\n" + "=" * 80 + "\n\n"
-
             async def fetch_results():
-                nonlocal results_text
+                # Ensure database is initialized
+                await ensure_database_initialized(self.config)
+                db_manager = get_database_manager()
+                results_text = "Search History:\n" + "=" * 80 + "\n\n"
+                
                 async for session in db_manager.get_session():
                     stmt = select(SearchHistory).order_by(SearchHistory.timestamp.desc()).limit(50)
                     result = await session.execute(stmt)
@@ -876,10 +1082,11 @@ class MainWindow(ctk.CTk):
             category = category_entry.get().strip() or "person"
             if name:
                 try:
-                    from nyx.core.database import get_database_manager
+                    from nyx.core.database import ensure_database_initialized, get_database_manager
                     from nyx.models.target import Target
 
                     async def create_target():
+                        await ensure_database_initialized(self.config)
                         db_manager = get_database_manager()
                         async for session in db_manager.get_session():
                             target = Target(name=name, category=category)

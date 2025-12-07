@@ -78,7 +78,14 @@ class DiskCacheBackend(CacheBackend):
             cache_dir: Cache directory path
             ttl: Time to live in seconds
         """
-        self.cache_dir = Path(cache_dir)
+        # Try to use resource paths if available (executable mode)
+        try:
+            from nyx.core.resource_paths import get_cache_path
+            self.cache_dir = get_cache_path()
+        except ImportError:
+            # Development mode: use provided path
+            self.cache_dir = Path(cache_dir)
+        
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.ttl = ttl
         self.lock = asyncio.Lock()

@@ -1611,13 +1611,14 @@ def targets(ctx, list_targets, create, category, delete):
       nyx-cli targets --delete 1
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.models.target import Target
         from sqlalchemy import select, delete as sql_delete
 
-        db_manager = get_database_manager()
-
         async def async_targets():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 if list_targets:
                     stmt = select(Target).order_by(Target.last_searched.desc())
@@ -1655,8 +1656,11 @@ def targets(ctx, list_targets, create, category, delete):
                 break
 
         asyncio.run(async_targets())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1702,12 +1706,11 @@ def export(ctx, target_id, export_format, output):
       nyx-cli export --target-id 1 --format pdf -o report.pdf
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.core.utils import sanitize_file_path
         from nyx.models.target import Target, TargetProfile
         from sqlalchemy import select
-
-        db_manager = get_database_manager()
 
         # Sanitize output path
         sanitized_path = sanitize_file_path(output)
@@ -1716,6 +1719,8 @@ def export(ctx, target_id, export_format, output):
             return
 
         async def async_export():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 if not target_id:
                     click.echo("❌ --target-id is required", err=True)
@@ -1789,8 +1794,11 @@ def export(ctx, target_id, export_format, output):
                 break
 
         asyncio.run(async_export())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1826,13 +1834,14 @@ def history(ctx, list_history, limit):
       nyx-cli history --list --limit 20
     """
     try:
-        from nyx.core.database import get_database_manager
+        import asyncio
+        from nyx.core.database import ensure_database_initialized, get_database_manager
         from nyx.models.target import SearchHistory
         from sqlalchemy import select
 
-        db_manager = get_database_manager()
-
         async def async_history():
+            cfg = ctx.obj.get("config")
+            db_manager = await ensure_database_initialized(cfg)
             async for session in db_manager.get_session():
                 stmt = select(SearchHistory).order_by(SearchHistory.timestamp.desc()).limit(limit)
                 result = await session.execute(stmt)
@@ -1856,8 +1865,11 @@ def history(ctx, list_history, limit):
                 break
 
         asyncio.run(async_history())
-    except RuntimeError:
-        click.echo("❌ Database not initialized. Run a search first to initialize the database.", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
     except Exception as e:
         click.echo(f"❌ Error: {e}", err=True)
         if ctx.obj.get("debug"):
@@ -1906,6 +1918,122 @@ def config(ctx, show, set_key):
         click.echo("   Please edit config/settings.yaml directly.")
     else:
         click.echo(ctx.get_help())
+
+
+@cli.group()
+@click.pass_context
+def update(ctx):
+    """Update management commands.
+    
+    \b
+    Check for, download, and install Nyx updates.
+    """
+    ctx.ensure_object(dict)
+
+
+@update.command()
+@click.pass_context
+def check(ctx):
+    """Check for available updates."""
+    try:
+        import asyncio
+        from nyx.config.base import load_config
+        from nyx.config.updater_config import UpdaterConfig
+        from nyx.core.updater import UpdateChecker
+        
+        cfg = ctx.obj.get("config") or load_config(ctx.obj.get("config_path"))
+        
+        # Get updater config from main config or use defaults
+        updater_config = UpdaterConfig(
+            enabled=cfg.updater.enabled if hasattr(cfg, "updater") else True,
+            source=getattr(cfg.updater, "source", "github") if hasattr(cfg, "updater") else "github",
+            github_repo=getattr(cfg.updater, "github_repo", None) if hasattr(cfg, "updater") else None,
+            custom_url=getattr(cfg.updater, "custom_url", None) if hasattr(cfg, "updater") else None,
+            channel=getattr(cfg.updater, "channel", "stable") if hasattr(cfg, "updater") else "stable",
+        )
+        
+        async def check_updates():
+            checker = UpdateChecker(updater_config)
+            update_info = await checker.check_for_updates()
+            
+            if update_info:
+                click.echo(f"\n✅ Update available: {update_info['version']}")
+                click.echo(f"   Current version: {update_info['current_version']}")
+                if update_info.get("changelog"):
+                    click.echo(f"\n📝 Changelog:\n{update_info['changelog']}")
+                click.echo(f"\n💡 Run 'nyx-cli update download' to download the update")
+            else:
+                from nyx.core.version import get_current_version
+                current = str(get_current_version())
+                click.echo(f"\n✅ You are running the latest version: {current}")
+        
+        asyncio.run(check_updates())
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error checking for updates: {e}", err=True)
+        if ctx.obj.get("debug"):
+            import traceback
+            traceback.print_exc()
+
+
+@update.command()
+@click.pass_context
+def download(ctx):
+    """Download available update."""
+    click.echo("⚠️  Update download not yet fully implemented")
+    click.echo("   Please check for updates first with 'nyx-cli update check'")
+
+
+@update.command()
+@click.pass_context
+def install(ctx):
+    """Install downloaded update."""
+    click.echo("⚠️  Update installation not yet fully implemented")
+    click.echo("   Please download the update first with 'nyx-cli update download'")
+
+
+@update.command()
+@click.pass_context
+def status(ctx):
+    """Show update status."""
+    try:
+        from nyx.core.version import get_current_version
+        from nyx.utils.update_utils import get_last_update_check, get_last_installed_version
+        
+        current = str(get_current_version())
+        click.echo(f"Current version: {current}")
+        
+        last_check = get_last_update_check()
+        if last_check:
+            click.echo(f"Last check: {last_check}")
+        else:
+            click.echo("Last check: Never")
+        
+        last_installed = get_last_installed_version()
+        if last_installed:
+            click.echo(f"Last installed: {last_installed}")
+    except ImportError:
+        click.echo("⚠️  Update functionality not available in this build", err=True)
+    except Exception as e:
+        click.echo(f"❌ Error: {e}", err=True)
+
+
+@update.command()
+@click.pass_context
+def settings(ctx):
+    """Configure update settings."""
+    click.echo("⚠️  Update settings configuration not yet fully implemented")
+    click.echo("   Please edit config/settings.yaml directly")
+
+
+@update.command()
+@click.argument("version")
+@click.pass_context
+def skip(ctx, version):
+    """Skip a specific version from updates."""
+    click.echo(f"⚠️  Skipping version {version} not yet fully implemented")
+    click.echo("   This feature will be available in a future update")
 
 
 if __name__ == "__main__":
