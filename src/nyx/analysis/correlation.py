@@ -1,6 +1,6 @@
 """Correlation analysis for OSINT data."""
 
-from typing import List, Dict, Any, Set, Tuple
+from typing import List, Dict, Any, Set, Tuple, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
@@ -320,6 +320,3 @@ class CorrelationAnalyzer:
 
         confidence = (total_score / total_weight * 100) if total_weight > 0 else 0.0
         return min(100.0, confidence)
-
-
-from typing import Optional

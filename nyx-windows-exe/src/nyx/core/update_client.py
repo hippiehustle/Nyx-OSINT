@@ -41,22 +41,28 @@ class GitHubReleasesClient:
             else:
                 url = f"{self.base_url}/releases"
             
-            async with self.http_client:
+            # Ensure client is open
+            await self.http_client.open()
+            try:
                 response = await self.http_client.get(url)
-            
-            if not response:
-                logger.error("Failed to fetch release information")
-                return None
-            
-            if channel != "stable":
-                # Filter for prereleases matching channel
-                releases = response.json() if isinstance(response.json(), list) else [response.json()]
-                for release in releases:
-                    if release.get("prerelease") and channel in release.get("tag_name", "").lower():
-                        return release
-                return None
-            
-            return response.json()
+                
+                if not response:
+                    logger.error("Failed to fetch release information")
+                    return None
+                
+                # Read response data before potentially closing client
+                if channel != "stable":
+                    # Filter for prereleases matching channel
+                    releases = response.json() if isinstance(response.json(), list) else [response.json()]
+                    for release in releases:
+                        if release.get("prerelease") and channel in release.get("tag_name", "").lower():
+                            return release
+                    return None
+                
+                return response.json()
+            finally:
+                # Clean up HTTP client
+                await self.http_client.close()
         except Exception as e:
             logger.error(f"Error fetching latest release: {e}", exc_info=True)
             return None
@@ -72,18 +78,20 @@ class GitHubReleasesClient:
             True if download successful
         """
         try:
-            async with self.http_client:
-                # GitHub requires Accept header for asset downloads
-                headers = {"Accept": "application/octet-stream"}
-                response = await self.http_client.get(asset_url, headers=headers, stream=True)
-                
-                if not response:
-                    return False
-                
-                # Save to file
-                with open(destination, "wb") as f:
-                    async for chunk in response.iter_bytes():
-                        f.write(chunk)
+            import httpx
+            
+            # Use httpx directly for streaming downloads
+            headers = {"Accept": "application/octet-stream", "User-Agent": "Nyx/0.1.0"}
+            
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                async with client.stream("GET", asset_url, headers=headers) as response:
+                    if response.status_code != 200:
+                        return False
+                    
+                    # Save to file
+                    with open(destination, "wb") as f:
+                        async for chunk in response.aiter_bytes():
+                            f.write(chunk)
                 
                 return True
         except Exception as e:
@@ -112,13 +120,19 @@ class CustomUpdateClient:
         """
         try:
             url = urljoin(self.base_url, "/api/version")
-            async with self.http_client:
+            # Ensure client is open
+            await self.http_client.open()
+            try:
                 response = await self.http_client.get(url)
-            
-            if not response:
-                return None
-            
-            return response.json()
+                
+                if not response:
+                    return None
+                
+                # Read response data
+                return response.json()
+            finally:
+                # Clean up HTTP client
+                await self.http_client.close()
         except Exception as e:
             logger.error(f"Error checking version: {e}", exc_info=True)
             return None
@@ -134,13 +148,19 @@ class CustomUpdateClient:
         """
         try:
             url = urljoin(self.base_url, f"/api/update/{version}")
-            async with self.http_client:
+            # Ensure client is open
+            await self.http_client.open()
+            try:
                 response = await self.http_client.get(url)
-            
-            if not response:
-                return None
-            
-            return response.json()
+                
+                if not response:
+                    return None
+                
+                # Read response data
+                return response.json()
+            finally:
+                # Clean up HTTP client
+                await self.http_client.close()
         except Exception as e:
             logger.error(f"Error getting update info: {e}", exc_info=True)
             return None
@@ -156,16 +176,21 @@ class CustomUpdateClient:
             True if download successful
         """
         try:
+            import httpx
+            
             url = urljoin(self.base_url, f"/api/download/{version}")
-            async with self.http_client:
-                response = await self.http_client.get(url, stream=True)
-                
-                if not response:
-                    return False
-                
-                with open(destination, "wb") as f:
-                    async for chunk in response.iter_bytes():
-                        f.write(chunk)
+            headers = {"User-Agent": "Nyx/0.1.0"}
+            
+            # Use httpx directly for streaming downloads
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                async with client.stream("GET", url, headers=headers) as response:
+                    if response.status_code != 200:
+                        return False
+                    
+                    # Save to file
+                    with open(destination, "wb") as f:
+                        async for chunk in response.aiter_bytes():
+                            f.write(chunk)
                 
                 return True
         except Exception as e:

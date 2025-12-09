@@ -191,6 +191,16 @@ def cli(ctx, config, debug):
     help="Search for online profiles associated with email (use with -e/--email)",
 )
 @click.option(
+    "--search-by-email",
+    is_flag=True,
+    help="Search platforms for profiles using email address (use with -e/--email)",
+)
+@click.option(
+    "--search-by-phone",
+    is_flag=True,
+    help="Search platforms for profiles using phone number (use with -p/--phone)",
+)
+@click.option(
     "--platforms",
     "-P",
     help="Specific platforms to search (comma-separated)",
@@ -273,6 +283,8 @@ def search(
     whois,
     deep,
     profiles,
+    search_by_email,
+    search_by_phone,
     platforms,
     category,
     no_nsfw,
@@ -389,23 +401,49 @@ def search(
             verbose=verbose,
         )
     elif email:
-        _search_email(
-            email=email,
-            search_profiles=profiles,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
+        if search_by_email:
+            _search_profiles_by_email(
+                email=email,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_email(
+                email=email,
+                search_profiles=profiles,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
     elif phone:
-        _search_phone(
-            phone=phone,
-            region=region,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
+        if search_by_phone:
+            _search_profiles_by_phone(
+                phone=phone,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_phone(
+                phone=phone,
+                region=region,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
     elif whois:
         _search_person(
             name=whois,
@@ -763,6 +801,182 @@ def _search_phone(
             click.echo(f"\n💾 Results saved to: {save_file}")
 
     asyncio.run(async_phone_check())
+
+
+def _search_profiles_by_email(
+    email: str,
+    platforms_str: str | None,
+    categories: tuple | None,
+    exclude_nsfw: bool,
+    only_nsfw: bool,
+    timeout: int,
+    output_format: str,
+    save_file: str | None,
+    verbose: bool,
+):
+    """Search platforms for profiles using email address."""
+    
+    async def async_search():
+        from nyx.core.utils import sanitize_query
+        
+        sanitized_email = sanitize_query(email, max_length=255)
+        if not sanitized_email or "@" not in sanitized_email:
+            click.echo(f"❌ Invalid email format: {email}", err=True)
+            return
+        
+        click.echo(f"📧 Searching platforms for profiles using email: {email}\n")
+        
+        config = load_config()
+        search_service = SearchService(config)
+        
+        # Parse platforms
+        platform_list = None
+        if platforms_str:
+            platform_list = [p.strip() for p in platforms_str.split(",")]
+        
+        # Parse categories
+        category_list = list(categories) if categories else None
+        
+        # NSFW filter
+        nsfw_filter = exclude_nsfw
+        if only_nsfw:
+            nsfw_filter = False
+            # Filter to only NSFW platforms
+            category_list = ["adult"] if not category_list else category_list + ["adult"]
+        
+        # Progress callback
+        def show_progress(platform_name, status):
+            if verbose or status in ("found", "error"):
+                status_symbol = "✅" if status == "found" else "❌" if status == "error" else "⏳"
+                click.echo(f"  {status_symbol} {platform_name}: {status}")
+        
+        results = await search_service.search_by_email(
+            email=sanitized_email,
+            platforms=platform_list,
+            categories=category_list,
+            exclude_nsfw=nsfw_filter,
+            timeout=timeout,
+            progress_callback=show_progress if verbose else None,
+        )
+        
+        await search_service.aclose()
+        
+        if not results:
+            click.echo("❌ No profiles found")
+            return
+        
+        # Display results
+        if output_format == "compact":
+            click.echo(f"\n✅ Found {len(results)} profiles:\n")
+            for platform, result in sorted(results.items()):
+                click.echo(f"  {result.get('url')}")
+        elif output_format == "json":
+            import json
+            click.echo(json.dumps(results, indent=2))
+        else:  # detailed
+            click.echo(f"\n✅ Found {len(results)} profiles:")
+            click.echo("=" * 80)
+            for platform, result in sorted(results.items()):
+                click.echo(f"\n🌐 {platform}:")
+                click.echo(f"   URL: {result.get('url')}")
+                if result.get("status_code"):
+                    click.echo(f"   HTTP Status: {result['status_code']}")
+        
+        # Save if requested
+        if save_file:
+            import json
+            with pathlib.Path(save_file).open("w") as f:
+                json.dump(results, f, indent=2)
+            click.echo(f"\n💾 Results saved to: {save_file}")
+    
+    asyncio.run(async_search())
+
+
+def _search_profiles_by_phone(
+    phone: str,
+    platforms_str: str | None,
+    categories: tuple | None,
+    exclude_nsfw: bool,
+    only_nsfw: bool,
+    timeout: int,
+    output_format: str,
+    save_file: str | None,
+    verbose: bool,
+):
+    """Search platforms for profiles using phone number."""
+    
+    async def async_search():
+        from nyx.core.utils import validate_phone_number
+        
+        if not validate_phone_number(phone):
+            click.echo(f"❌ Invalid phone number format: {phone}", err=True)
+            return
+        
+        click.echo(f"📱 Searching platforms for profiles using phone: {phone}\n")
+        
+        config = load_config()
+        search_service = SearchService(config)
+        
+        # Parse platforms
+        platform_list = None
+        if platforms_str:
+            platform_list = [p.strip() for p in platforms_str.split(",")]
+        
+        # Parse categories
+        category_list = list(categories) if categories else None
+        
+        # NSFW filter
+        nsfw_filter = exclude_nsfw
+        if only_nsfw:
+            nsfw_filter = False
+            category_list = ["adult"] if not category_list else category_list + ["adult"]
+        
+        # Progress callback
+        def show_progress(platform_name, status):
+            if verbose or status in ("found", "error"):
+                status_symbol = "✅" if status == "found" else "❌" if status == "error" else "⏳"
+                click.echo(f"  {status_symbol} {platform_name}: {status}")
+        
+        results = await search_service.search_by_phone(
+            phone=phone,
+            platforms=platform_list,
+            categories=category_list,
+            exclude_nsfw=nsfw_filter,
+            timeout=timeout,
+            progress_callback=show_progress if verbose else None,
+        )
+        
+        await search_service.aclose()
+        
+        if not results:
+            click.echo("❌ No profiles found")
+            return
+        
+        # Display results
+        if output_format == "compact":
+            click.echo(f"\n✅ Found {len(results)} profiles:\n")
+            for platform, result in sorted(results.items()):
+                click.echo(f"  {result.get('url')}")
+        elif output_format == "json":
+            import json
+            click.echo(json.dumps(results, indent=2))
+        else:  # detailed
+            click.echo(f"\n✅ Found {len(results)} profiles:")
+            click.echo("=" * 80)
+            for platform, result in sorted(results.items()):
+                click.echo(f"\n🌐 {platform}:")
+                click.echo(f"   URL: {result.get('url')}")
+                if result.get("status_code"):
+                    click.echo(f"   HTTP Status: {result['status_code']}")
+        
+        # Save if requested
+        if save_file:
+            import json
+            with pathlib.Path(save_file).open("w") as f:
+                json.dump(results, f, indent=2)
+            click.echo(f"\n💾 Results saved to: {save_file}")
+    
+    asyncio.run(async_search())
 
 
 def _search_person(
@@ -1692,6 +1906,121 @@ def targets(ctx, list_targets, create, category, delete):
         if ctx.obj.get("debug"):
             import traceback
             traceback.print_exc()
+
+
+@cli.command()
+@click.pass_context
+def verify_installation(ctx):
+    """Verify installation by running comprehensive health checks.
+    
+    This command runs all health checks to ensure the installation
+    is working correctly.
+    """
+    import asyncio
+    from pathlib import Path
+    
+    click.echo("🔍 Verifying installation...\n")
+    
+    async def async_verify():
+        project_root = Path(__file__).parent.parent.parent
+        import sys
+        sys.path.insert(0, str(project_root))
+        from scripts.health_checker import run_all_checks
+        
+        report = await run_all_checks(project_root, include_gui=True)
+        
+        click.echo("\n" + "=" * 80)
+        for check in report.checks:
+            status = "✅" if check.passed else "❌"
+            click.echo(f"{status} {check.name}: {check.message}")
+            if check.details and not check.passed:
+                click.echo(f"   Details: {check.details}")
+        
+        click.echo("\n" + "=" * 80)
+        click.echo(report.get_summary())
+        
+        if report.is_healthy():
+            click.echo("\n✅ All health checks passed!")
+            return 0
+        else:
+            click.echo("\n❌ Some health checks failed. Please review the errors above.")
+            return 1
+    
+    exit_code = asyncio.run(async_verify())
+    sys.exit(exit_code)
+
+
+@cli.command()
+@click.pass_context
+def smoke_test(ctx):
+    """Run quick smoke tests to verify basic functionality.
+    
+    This command runs a minimal set of tests to quickly verify
+    that the installation is functional.
+    """
+    import asyncio
+    
+    click.echo("💨 Running smoke tests...\n")
+    
+    async def async_test():
+        tests_passed = 0
+        tests_total = 0
+        
+        # Test 1: Import critical modules
+        tests_total += 1
+        try:
+            from nyx import __version__
+            from nyx.config.base import load_config
+            from nyx.osint.search import SearchService
+            click.echo("✅ Module imports: OK")
+            tests_passed += 1
+        except Exception as e:
+            click.echo(f"❌ Module imports: FAILED - {e}")
+        
+        # Test 2: Load configuration
+        tests_total += 1
+        try:
+            config = load_config()
+            click.echo("✅ Configuration loading: OK")
+            tests_passed += 1
+        except Exception as e:
+            click.echo(f"❌ Configuration loading: FAILED - {e}")
+        
+        # Test 3: Initialize search service
+        tests_total += 1
+        try:
+            search_service = SearchService(config)
+            await search_service.aclose()
+            click.echo("✅ Search service initialization: OK")
+            tests_passed += 1
+        except Exception as e:
+            click.echo(f"❌ Search service initialization: FAILED - {e}")
+        
+        # Test 4: Platform database
+        tests_total += 1
+        try:
+            from nyx.osint.platforms import get_platform_database
+            db = get_platform_database()
+            count = db.count_platforms()
+            if count > 0:
+                click.echo(f"✅ Platform database: OK ({count} platforms)")
+                tests_passed += 1
+            else:
+                click.echo("❌ Platform database: FAILED - No platforms loaded")
+        except Exception as e:
+            click.echo(f"❌ Platform database: FAILED - {e}")
+        
+        click.echo(f"\n📊 Results: {tests_passed}/{tests_total} tests passed")
+        
+        if tests_passed == tests_total:
+            click.echo("✅ All smoke tests passed!")
+            return 0
+        else:
+            click.echo("❌ Some smoke tests failed")
+            return 1
+    
+    exit_code = asyncio.run(async_test())
+    sys.exit(exit_code)
 
 
 @cli.command()
