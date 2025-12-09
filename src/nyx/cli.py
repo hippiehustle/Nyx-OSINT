@@ -12,17 +12,38 @@ import sys
 import traceback
 from datetime import datetime
 
-import click
+# Handle direct execution: when run as a script (python src/nyx/cli.py),
+# __name__ is "__main__" and relative imports will fail.
+# In this case, we need to add the src directory to sys.path for absolute imports.
+if __name__ == "__main__":
+    # Running directly as a script - add src directory (two up from this file) to sys.path if not already present
+    current_file = pathlib.Path(__file__).resolve()
+    src_dir = current_file.parents[1]  # Get src directory (parent of nyx/)
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    # Use absolute imports when running directly
+    from nyx import __version__
+    from nyx.config.base import load_config
+    from nyx.core.logger import get_logger, setup_logging
+    from nyx.intelligence.email import EmailIntelligence
+    from nyx.intelligence.phone import PhoneIntelligence
+    from nyx.intelligence.smart import SmartSearchInput, SmartSearchService
+    from nyx.models.platform import PlatformCategory
+    from nyx.osint.platforms import get_platform_database
+    from nyx.osint.search import SearchService
+else:
+    # Running as a module (python -m nyx.cli) - use relative imports
+    from . import __version__
+    from .config.base import load_config
+    from .core.logger import get_logger, setup_logging
+    from .intelligence.email import EmailIntelligence
+    from .intelligence.phone import PhoneIntelligence
+    from .intelligence.smart import SmartSearchInput, SmartSearchService
+    from .models.platform import PlatformCategory
+    from .osint.platforms import get_platform_database
+    from .osint.search import SearchService
 
-from nyx import __version__
-from nyx.config.base import load_config
-from nyx.core.logger import get_logger, setup_logging
-from nyx.intelligence.email import EmailIntelligence
-from nyx.intelligence.phone import PhoneIntelligence
-from nyx.intelligence.smart import SmartSearchInput, SmartSearchService
-from nyx.models.platform import PlatformCategory
-from nyx.osint.platforms import get_platform_database
-from nyx.osint.search import SearchService
+import click
 
 logger = get_logger(__name__)
 
