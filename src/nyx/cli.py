@@ -3,7 +3,7 @@
 This module provides a comprehensive command-line interface for OSINT investigations,
 including username searches across 200+ platforms, email intelligence gathering,
 phone number lookups, and platform management.
-"""
+"""  # noqa: CPY001
 
 import asyncio
 import logging
@@ -53,7 +53,7 @@ logging.getLogger("nyx.osint.search").setLevel(logging.WARNING)
 
 def _convert_config_value(value: str):
     """Convert string value to appropriate type for config.
-    
+
     Args:
         value: String value to convert
         
