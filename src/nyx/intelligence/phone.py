@@ -1,11 +1,14 @@
 """Phone number intelligence gathering and validation."""
 
 import asyncio
+import re
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
+from urllib.parse import quote
 import phonenumbers
 from phonenumbers import geocoder, carrier, timezone
+from bs4 import BeautifulSoup
 
 from nyx.core.http_client import HTTPClient
 from nyx.core.logger import get_logger
@@ -43,6 +46,11 @@ class PhoneIntelligence:
         """Initialize phone intelligence service."""
         self.http_client = HTTPClient()
         self.cache = get_cache()
+        # User-Agent for web scraping
+        self.user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
 
     def auto_detect_region(self, phone: str) -> Optional[str]:
         """Auto-detect region from phone number format.
@@ -274,10 +282,246 @@ class PhoneIntelligence:
         """Check if phone is registered with Signal."""
         return False
 
+    def _generate_phone_variations(self, phone: str) -> List[str]:
+        """Generate multiple phone number format variations for searching.
+        
+        Args:
+            phone: Phone number in E164 format (e.g., +1234567890)
+            
+        Returns:
+            List of phone number variations
+        """
+        # Remove all non-digits except +
+        clean = re.sub(r'[^\d+]', '', phone)
+        
+        variations = []
+        
+        # E164 format: +1234567890
+        if clean.startswith('+'):
+            variations.append(clean)
+            # Without +: 1234567890
+            variations.append(clean[1:])
+            
+            # US format variations
+            if clean.startswith('+1') and len(clean) == 12:
+                digits = clean[2:]
+                # (123) 456-7890
+                variations.append(f"({digits[:3]}) {digits[3:6]}-{digits[6:]}")
+                # 123-456-7890
+                variations.append(f"{digits[:3]}-{digits[3:6]}-{digits[6:]}")
+                # 123.456.7890
+                variations.append(f"{digits[:3]}.{digits[3:6]}.{digits[6:]}")
+                # 1234567890
+                variations.append(digits)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variations = []
+        for var in variations:
+            if var not in seen:
+                seen.add(var)
+                unique_variations.append(var)
+        
+        return unique_variations
+
+    def _validate_name(self, name: Optional[str]) -> bool:
+        """Validate that extracted name looks reasonable.
+        
+        Args:
+            name: Name string to validate
+            
+        Returns:
+            True if name appears valid
+        """
+        if not name:
+            return False
+        
+        # Remove extra whitespace
+        name = name.strip()
+        
+        # Must be at least 2 characters
+        if len(name) < 2:
+            return False
+        
+        # Must contain at least one letter
+        if not re.search(r'[a-zA-Z]', name):
+            return False
+        
+        # Should not be all numbers
+        if name.replace(' ', '').isdigit():
+            return False
+        
+        # Should not contain common invalid patterns
+        invalid_patterns = [
+            r'^\d+$',  # All digits
+            r'^[^\w\s]+$',  # Only special characters
+            r'^(phone|number|cell|mobile|tel|call)$',  # Common placeholders
+            r'^(unknown|n/a|na|none|null)$',  # Common null values
+        ]
+        
+        for pattern in invalid_patterns:
+            if re.match(pattern, name, re.IGNORECASE):
+                return False
+        
+        return True
+
+    async def _lookup_public_sites(self, phone: str) -> Optional[str]:
+        """Lookup name from public people search sites.
+        
+        Args:
+            phone: Phone number in E164 format
+            
+        Returns:
+            Associated name or None
+        """
+        phone_variations = self._generate_phone_variations(phone)
+        
+        # Try TruePeopleSearch
+        try:
+            for phone_var in phone_variations[:3]:  # Limit to first 3 variations
+                try:
+                    # Clean phone for URL
+                    clean_phone = re.sub(r'[^\d]', '', phone_var)
+                    url = f"https://www.truepeoplesearch.com/result?phoneno={clean_phone}"
+                    
+                    headers = {"User-Agent": self.user_agent}
+                    await self.http_client.open()
+                    response = await self.http_client.get(url, headers=headers, timeout=15)
+                    
+                    if response and response.status_code == 200:
+                        html = response.text
+                        soup = BeautifulSoup(html, 'lxml')
+                        
+                        # Try common name selectors
+                        name_selectors = [
+                            '.name',
+                            '#person-name',
+                            '.person-name',
+                            'h2.name',
+                            '.result-name',
+                            '[class*="name"]',
+                        ]
+                        
+                        for selector in name_selectors:
+                            name_elem = soup.select_one(selector)
+                            if name_elem:
+                                name = name_elem.get_text(strip=True)
+                                if self._validate_name(name):
+                                    logger.debug(f"Found name from TruePeopleSearch: {name}")
+                                    return name
+                        
+                        # Fallback: search for name-like patterns in text
+                        text = soup.get_text()
+                        # Look for patterns like "Name: John Doe" or similar
+                        name_match = re.search(r'(?:name|person)[:\s]+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)', text, re.IGNORECASE)
+                        if name_match:
+                            name = name_match.group(1).strip()
+                            if self._validate_name(name):
+                                logger.debug(f"Found name from TruePeopleSearch (pattern): {name}")
+                                return name
+                    
+                    # Rate limiting - be respectful
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.debug(f"TruePeopleSearch lookup failed for {phone_var}: {e}")
+                    continue
+        except Exception as e:
+            logger.debug(f"TruePeopleSearch lookup error: {e}")
+        
+        # Try FastPeopleSearch
+        try:
+            for phone_var in phone_variations[:3]:
+                try:
+                    clean_phone = re.sub(r'[^\d]', '', phone_var)
+                    url = f"https://www.fastpeoplesearch.com/phone/{clean_phone}"
+                    
+                    headers = {"User-Agent": self.user_agent}
+                    await self.http_client.open()
+                    response = await self.http_client.get(url, headers=headers, timeout=15)
+                    
+                    if response and response.status_code == 200:
+                        html = response.text
+                        soup = BeautifulSoup(html, 'lxml')
+                        
+                        # Try common name selectors
+                        name_selectors = [
+                            '.name',
+                            '.person-name',
+                            'h1',
+                            'h2',
+                            '[class*="name"]',
+                        ]
+                        
+                        for selector in name_selectors:
+                            name_elem = soup.select_one(selector)
+                            if name_elem:
+                                name = name_elem.get_text(strip=True)
+                                if self._validate_name(name):
+                                    logger.debug(f"Found name from FastPeopleSearch: {name}")
+                                    return name
+                    
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.debug(f"FastPeopleSearch lookup failed for {phone_var}: {e}")
+                    continue
+        except Exception as e:
+            logger.debug(f"FastPeopleSearch lookup error: {e}")
+        
+        return None
+
+    async def _search_social_media_for_name(self, phone: str) -> Optional[str]:
+        """Search social media platforms for phone number and extract name.
+        
+        Args:
+            phone: Phone number in E164 format
+            
+        Returns:
+            Associated name or None
+        """
+        phone_variations = self._generate_phone_variations(phone)
+        
+        # Note: Most social media platforms require authentication for phone searches
+        # This is a basic implementation that may have limited success
+        # For production use, would need API keys or authenticated sessions
+        
+        # Try searching public profiles/pages that might list phone numbers
+        # This is a placeholder - actual implementation would need platform-specific APIs
+        
+        logger.debug(f"Social media reverse search for {phone} - requires API integration")
+        return None
+
+    async def _search_engines_for_name(self, phone: str) -> Optional[str]:
+        """Search search engines for phone number and extract name.
+        
+        Args:
+            phone: Phone number in E164 format
+            
+        Returns:
+            Associated name or None
+        """
+        phone_variations = self._generate_phone_variations(phone)
+        
+        # Try Google search (basic - would need API key for production)
+        try:
+            # Format search query
+            query = f'"{phone_variations[0]}" OR "{phone_variations[1] if len(phone_variations) > 1 else phone_variations[0]}" name'
+            query_encoded = quote(query)
+            
+            # Note: This is a basic implementation
+            # For production, would use Google Custom Search API or similar
+            # For now, this is a placeholder that demonstrates the structure
+            
+            logger.debug(f"Search engine lookup for {phone} - requires API integration")
+            return None
+        except Exception as e:
+            logger.debug(f"Search engine lookup error: {e}")
+            return None
+
     async def lookup_name(self, phone: str) -> Optional[str]:
-        """Lookup name associated with phone number.
+        """Lookup name associated with phone number using multiple free sources.
 
         Uses multiple sources to find the name registered to a phone number.
+        Tries sources in order of reliability and returns the first valid result.
 
         Args:
             phone: Phone number in E164 format
@@ -285,55 +529,36 @@ class PhoneIntelligence:
         Returns:
             Associated name or None
         """
-        # Try TrueCaller-style lookup
-        try:
-            headers = {
-                "User-Agent": "Nyx-OSINT/0.1.0",
-            }
-            # NOTE: Reverse phone lookup requires API keys from services like:
-            # - NumLookupAPI (https://numlookupapi.com/ - requires API key)
-            # - WhitePages (https://www.whitepages.com/ - requires API key)
-            # - Spokeo (https://www.spokeo.com/ - requires API key)
-            # - TrueCaller (https://www.truecaller.com/ - requires API key)
-            #
-            # To enable this feature:
-            # 1. Obtain API key from a reverse lookup service
-            # 2. Add API key to configuration file (config/settings.yaml)
-            # 3. Update this method to use the configured API key
-            # 4. Handle rate limits and API quotas appropriately
-            #
-            # Example integration:
-            #   api_key = self.config.get("phone_lookup_api_key")
-            #   if api_key:
-            #       response = await self.http_client.get(
-            #           f"https://api.service.com/lookup/{phone}",
-            #           headers={**headers, "Authorization": f"Bearer {api_key}"},
-            #           timeout=10,
-            #       )
-            #       if response and response.status_code == 200:
-            #           data = response.json()
-            #           return data.get("name") or data.get("owner_name")
-            #
-            # For now, attempt public API (may fail without API key)
-            # This maintains API compatibility while allowing future integration
+        # Check cache first (7-day TTL)
+        cache_key = f"phone_name:{phone}"
+        if self.cache:
+            cached = await self.cache.get(cache_key)
+            if cached:
+                logger.debug(f"Returning cached name for {phone}")
+                return cached
+        
+        # Try sources in order of reliability
+        sources = [
+            ("public_sites", self._lookup_public_sites),
+            ("social_media", self._search_social_media_for_name),
+            ("search_engines", self._search_engines_for_name),
+        ]
+        
+        for source_name, lookup_func in sources:
             try:
-                response = await self.http_client.get(
-                    f"https://api.numlookupapi.com/v1/validate/{phone}",
-                    headers=headers,
-                    timeout=10,
-                )
-                if response and response.status_code == 200:
-                    data = response.json()
-                    return data.get("name") or data.get("carrier_name")
-            except Exception:
-                # Public API may not be available or may require authentication
-                logger.debug(
-                    f"Reverse phone name lookup unavailable for {phone}. "
-                    "API key required for full functionality."
-                )
-        except Exception as e:
-            logger.warning(f"Name lookup failed: {e}", exc_info=True)
-
+                name = await lookup_func(phone)
+                if name and self._validate_name(name):
+                    # Cache successful result (7 days)
+                    if self.cache:
+                        await self.cache.set(cache_key, name, ttl=86400 * 7)
+                    logger.info(f"Found name for {phone} via {source_name}: {name}")
+                    return name
+            except Exception as e:
+                logger.debug(f"{source_name} lookup failed for {phone}: {e}")
+                continue
+        
+        # No name found from any source
+        logger.debug(f"No name found for {phone} from any source")
         return None
 
     async def lookup_addresses(self, phone: str) -> List[str]:

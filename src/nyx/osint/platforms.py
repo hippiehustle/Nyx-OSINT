@@ -183,6 +183,10 @@ class PlatformDatabase:
                 "category": "SOCIAL_MEDIA",
                 "username_param": "username",
                 "search_url": "https://www.instagram.com/{username}/",
+                "email_search_url": "https://www.instagram.com/accounts/account_recovery/?email={email}",
+                "phone_search_url": None,  # Instagram doesn't support public phone search
+                "email_param": "email",
+                "phone_param": None,
                 "detection_method": "status_code",
                 "exists_status_code": 200,
                 "not_exists_status_code": 404,
@@ -193,6 +197,10 @@ class PlatformDatabase:
                 "category": "SOCIAL_MEDIA",
                 "username_param": "id",
                 "search_url": "https://www.facebook.com/{username}",
+                "email_search_url": "https://www.facebook.com/search/top/?q={q}",
+                "phone_search_url": "https://www.facebook.com/search/top/?q={q}",
+                "email_param": "q",
+                "phone_param": "q",
                 "detection_method": "status_code",
                 "exists_status_code": 200,
                 "not_exists_status_code": 404,
@@ -317,6 +325,10 @@ class PlatformDatabase:
                 "category": "PROFESSIONAL",
                 "username_param": "company",
                 "search_url": "https://linkedin.com/in/{username}",
+                "email_search_url": "https://www.linkedin.com/search/results/people/?keywords={keywords}",
+                "phone_search_url": None,  # LinkedIn doesn't support public phone search
+                "email_param": "keywords",
+                "phone_param": None,
                 "detection_method": "status_code",
                 "exists_status_code": 200,
                 "not_exists_status_code": 404,
@@ -423,6 +435,10 @@ class PlatformDatabase:
                 "category": "DATING",
                 "username_param": "user",
                 "search_url": "https://tinder.com/@{username}",
+                "email_search_url": None,  # Tinder requires app authentication
+                "phone_search_url": None,  # Tinder requires app authentication
+                "email_param": None,
+                "phone_param": None,
                 "detection_method": "status_code",
                 "source_tool": "blackbird",
             },
@@ -1086,6 +1102,10 @@ class PlatformDatabase:
                 "category": "ADULT",
                 "username_param": "user",
                 "search_url": "https://onlyfans.com/{username}",
+                "email_search_url": None,  # OnlyFans requires authentication
+                "phone_search_url": None,  # OnlyFans requires authentication
+                "email_param": None,
+                "phone_param": None,
                 "detection_method": "status_code",
                 "exists_status_code": 200,
                 "is_nsfw": True,
@@ -1096,6 +1116,10 @@ class PlatformDatabase:
                 "category": "ADULT",
                 "username_param": "user",
                 "search_url": "https://fansly.com/{username}",
+                "email_search_url": None,  # Fansly requires authentication
+                "phone_search_url": None,  # Fansly requires authentication
+                "email_param": None,
+                "phone_param": None,
                 "detection_method": "status_code",
                 "exists_status_code": 200,
                 "is_nsfw": True,

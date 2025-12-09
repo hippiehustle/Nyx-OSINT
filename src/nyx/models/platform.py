@@ -42,8 +42,14 @@ class Platform(Base):
 
     # Platform detection
     username_param: Mapped[str] = mapped_column(String(255), nullable=True)  # e.g., "user", "id"
-    search_url: Mapped[str] = mapped_column(String(2048), nullable=True)  # URL pattern
+    search_url: Mapped[str] = mapped_column(String(2048), nullable=True)  # URL pattern for username search
     detection_method: Mapped[str] = mapped_column(String(50), default="status_code")  # status_code, regex, json
+    
+    # Email/Phone search support
+    email_search_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)  # URL pattern for email search
+    phone_search_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)  # URL pattern for phone search
+    email_param: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # URL parameter name for email (e.g., "email", "q")
+    phone_param: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # URL parameter name for phone (e.g., "phone", "tel")
 
     # Detection patterns
     exists_status_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Expected code if found

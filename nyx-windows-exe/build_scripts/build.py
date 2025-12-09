@@ -204,10 +204,13 @@ def main():
     if args.manifest:
         # Find the built executable
         exe_name = spec_path.stem.replace("_", "-")
+        exe_base_name = f"{exe_name.split('-')[0]}-{exe_name.split('-')[1]}.exe"
         if "onefile" in exe_name:
-            exe_path = dist_dir / exe_name / f"{exe_name.split('-')[0]}-{exe_name.split('-')[1]}.exe"
+            # Onefile builds: executable is directly in dist_dir
+            exe_path = dist_dir / exe_base_name
         else:
-            exe_path = dist_dir / exe_name / f"{exe_name.split('-')[0]}-{exe_name.split('-')[1]}.exe"
+            # Onedir/folder builds: executable is in a subdirectory
+            exe_path = dist_dir / exe_name / exe_base_name
         
         if exe_path.exists():
             manifest = generate_update_manifest(exe_path, config)

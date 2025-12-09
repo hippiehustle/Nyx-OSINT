@@ -11,6 +11,16 @@ def _is_pyinstaller() -> bool:
     return hasattr(sys, "_MEIPASS")
 
 
+def _is_build_structure() -> bool:
+    """Check if running from the Windows executable build structure.
+    
+    Returns:
+        True if the current file is in the nyx-windows-exe directory structure
+    """
+    current_file = Path(__file__).resolve()
+    return "nyx-windows-exe" in current_file.parts
+
+
 def get_base_path() -> Path:
     """Get the base path (executable directory or script directory).
     
@@ -32,11 +42,15 @@ def get_base_path() -> Path:
             # Or in development: src/nyx/core/resource_paths.py
             current_file = Path(__file__).resolve()
             # Go up to project root
-            if "nyx-windows-exe" in current_file.parts:
-                # In executable build structure
-                return current_file.parent.parent.parent.parent
+            if _is_build_structure():
+                # In executable build structure: go up 5 levels to reach project root
+                # nyx-windows-exe/src/nyx/core/resource_paths.py
+                # -> core -> nyx -> src -> nyx-windows-exe -> project_root
+                return current_file.parent.parent.parent.parent.parent
             else:
-                # In development structure
+                # In development structure: go up 4 levels to reach project root
+                # src/nyx/core/resource_paths.py
+                # -> core -> nyx -> src -> project_root
                 return current_file.parent.parent.parent.parent
 
 
@@ -62,9 +76,9 @@ def get_data_path() -> Path:
     else:
         # In development, use project root data directory
         # Check if we're in nyx-windows-exe or main project
-        if "nyx-windows-exe" in base_path.parts:
+        if _is_build_structure():
             # In executable build structure
-            return base_path.parent / "data"
+            return base_path / "data"
         else:
             # In development structure
             return base_path / "data"
@@ -91,8 +105,9 @@ def get_config_path() -> Path:
             return bundled_config
         
         # Fallback: use %APPDATA%/Nyx/config
-        appdata = Path(os.getenv("APPDATA", ""))
-        if appdata:
+        appdata_str = os.getenv("APPDATA", "")
+        if appdata_str:
+            appdata = Path(appdata_str)
             appdata_config = appdata / "Nyx" / "config"
             appdata_config.mkdir(parents=True, exist_ok=True)
             return appdata_config
@@ -101,8 +116,8 @@ def get_config_path() -> Path:
         return base_path / "config"
     else:
         # In development, use project root config directory
-        if "nyx-windows-exe" in base_path.parts:
-            return base_path.parent / "config"
+        if _is_build_structure():
+            return base_path / "config"
         else:
             return base_path / "config"
 
@@ -122,9 +137,9 @@ def get_resource_path(relative_path: str) -> Path:
     else:
         # In development, look in project root or resources directory
         base_path = get_base_path()
-        if "nyx-windows-exe" in base_path.parts:
-            # In executable build structure
-            return base_path / "resources" / relative_path
+        if _is_build_structure():
+            # In executable build structure, look in nyx-windows-exe/resources
+            return base_path / "nyx-windows-exe" / "resources" / relative_path
         else:
             # In development structure, try resources or project root
             resources_path = base_path / "resources" / relative_path
@@ -140,8 +155,9 @@ def get_user_data_path() -> Path:
     Returns:
         Path to user data directory
     """
-    appdata = Path(os.getenv("APPDATA", ""))
-    if appdata:
+    appdata_str = os.getenv("APPDATA", "")
+    if appdata_str:
+        appdata = Path(appdata_str)
         user_data = appdata / "Nyx"
         user_data.mkdir(parents=True, exist_ok=True)
         return user_data
@@ -158,8 +174,9 @@ def get_cache_path() -> Path:
     """
     if _is_pyinstaller():
         # Use temp directory or user data directory
-        temp_dir = Path(os.getenv("TEMP", ""))
-        if temp_dir:
+        temp_str = os.getenv("TEMP", "")
+        if temp_str:
+            temp_dir = Path(temp_str)
             cache_path = temp_dir / "Nyx" / "cache"
             cache_path.mkdir(parents=True, exist_ok=True)
             return cache_path
@@ -167,8 +184,8 @@ def get_cache_path() -> Path:
     else:
         # In development, use project root cache
         base_path = get_base_path()
-        if "nyx-windows-exe" in base_path.parts:
-            return base_path.parent / "data" / "cache"
+        if _is_build_structure():
+            return base_path / "data" / "cache"
         else:
             return base_path / "data" / "cache"
 
@@ -187,8 +204,8 @@ def get_log_path() -> Path:
     else:
         # In development, use project root logs
         base_path = get_base_path()
-        if "nyx-windows-exe" in base_path.parts:
-            return base_path.parent / "logs"
+        if _is_build_structure():
+            return base_path / "logs"
         else:
             return base_path / "logs"
 
@@ -206,8 +223,8 @@ def get_database_path() -> Path:
     else:
         # In development, use project root
         base_path = get_base_path()
-        if "nyx-windows-exe" in base_path.parts:
-            return base_path.parent / "nyx.db"
+        if _is_build_structure():
+            return base_path / "nyx.db"
         else:
             return base_path / "nyx.db"
 
