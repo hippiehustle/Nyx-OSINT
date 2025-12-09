@@ -295,6 +295,135 @@ def cli(ctx, config, debug):
     help="Region code for phone number (e.g., US, GB)",
     metavar="CODE",
 )
+def _validate_search_inputs(
+    username, email, phone, whois, deep, no_nsfw, only_nsfw,
+) -> None:
+    """Validate search inputs and exit if validation fails."""
+    if not (username or email or phone or whois or deep):
+        click.echo("❌ Error: You must specify at least one search type:", err=True)
+        click.echo("  -u/--username    Search for username", err=True)
+        click.echo("  -e/--email       Investigate email", err=True)
+        click.echo("  -p/--phone       Investigate phone", err=True)
+        click.echo("  -w/--whois       Person lookup", err=True)
+        click.echo("  -d/--deep        Deep investigation", err=True)
+        click.echo("\n💡 Use 'nyx-cli search --help' for more information", err=True)
+        sys.exit(1)
+
+    if no_nsfw and only_nsfw:
+        click.echo(
+            "❌ Error: --no-nsfw and --only-nsfw are mutually exclusive",
+            err=True,
+        )
+        sys.exit(1)
+
+    if len([x for x in [username, email, phone, whois, deep] if x]) > 1:
+        click.echo("❌ Error: Specify only ONE search type at a time", err=True)
+        sys.exit(1)
+
+
+def _execute_search(
+    username,
+    email,
+    phone,
+    whois,
+    deep,
+    profiles,
+    search_by_email,
+    search_by_phone,
+    platforms,
+    category,
+    no_nsfw,
+    only_nsfw,
+    timeout,
+    output,
+    save,
+    verbose,
+    region,
+) -> None:
+    """Execute the appropriate search based on input parameters."""
+    if username:
+        _search_username(
+            username=username,
+            platforms_str=platforms,
+            categories=category,
+            exclude_nsfw=no_nsfw,
+            only_nsfw=only_nsfw,
+            timeout=timeout,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+        return
+
+    if email:
+        if search_by_email:
+            _search_profiles_by_email(
+                email=email,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_email(
+                email=email,
+                search_profiles=profiles,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        return
+
+    if phone:
+        if search_by_phone:
+            _search_profiles_by_phone(
+                phone=phone,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_phone(
+                phone=phone,
+                region=region,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        return
+
+    if whois:
+        _search_person(
+            name=whois,
+            state=region,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+        return
+
+    if deep:
+        _search_deep(
+            query=deep,
+            region=region,
+            timeout=timeout,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+
+
 @click.pass_context
 def search(
     ctx,
@@ -315,7 +444,7 @@ def search(
     save,
     verbose,
     region,
-):
+) -> None:
     """🔎 Unified search command for all OSINT investigations
 
     \b
@@ -386,102 +515,26 @@ def search(
     • Platform names are case-insensitive
     • Results are sorted by platform name
     """
-    # Validation
-    if not (username or email or phone or whois or deep):
-        click.echo("❌ Error: You must specify at least one search type:", err=True)
-        click.echo("  -u/--username    Search for username", err=True)
-        click.echo("  -e/--email       Investigate email", err=True)
-        click.echo("  -p/--phone       Investigate phone", err=True)
-        click.echo("  -w/--whois       Person lookup", err=True)
-        click.echo("  -d/--deep        Deep investigation", err=True)
-        click.echo("\n💡 Use 'nyx-cli search --help' for more information", err=True)
-        sys.exit(1)
-
-    if no_nsfw and only_nsfw:
-        click.echo(
-            "❌ Error: --no-nsfw and --only-nsfw are mutually exclusive",
-            err=True,
-        )
-        sys.exit(1)
-
-    if len([x for x in [username, email, phone, whois, deep] if x]) > 1:
-        click.echo("❌ Error: Specify only ONE search type at a time", err=True)
-        sys.exit(1)
-
-    # Execute appropriate search
-    if username:
-        _search_username(
-            username=username,
-            platforms_str=platforms,
-            categories=category,
-            exclude_nsfw=no_nsfw,
-            only_nsfw=only_nsfw,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
-    elif email:
-        if search_by_email:
-            _search_profiles_by_email(
-                email=email,
-                platforms_str=platforms,
-                categories=category,
-                exclude_nsfw=no_nsfw,
-                only_nsfw=only_nsfw,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-        else:
-            _search_email(
-                email=email,
-                search_profiles=profiles,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-    elif phone:
-        if search_by_phone:
-            _search_profiles_by_phone(
-                phone=phone,
-                platforms_str=platforms,
-                categories=category,
-                exclude_nsfw=no_nsfw,
-                only_nsfw=only_nsfw,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-        else:
-            _search_phone(
-                phone=phone,
-                region=region,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-    elif whois:
-        _search_person(
-            name=whois,
-            state=region,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
-    elif deep:
-        _search_deep(
-            query=deep,
-            region=region,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
+    _validate_search_inputs(username, email, phone, whois, deep, no_nsfw, only_nsfw)
+    _execute_search(
+        username,
+        email,
+        phone,
+        whois,
+        deep,
+        profiles,
+        search_by_email,
+        search_by_phone,
+        platforms,
+        category,
+        no_nsfw,
+        only_nsfw,
+        timeout,
+        output,
+        save,
+        verbose,
+        region,
+    )
 
 
 def _search_username(
