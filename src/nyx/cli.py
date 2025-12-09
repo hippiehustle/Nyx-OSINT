@@ -99,7 +99,7 @@ def _convert_config_value(value: str):
 @click.option("-d", "--debug", help="Enable debug logging", is_flag=True)
 @click.pass_context
 def cli(ctx, config, debug):
-    """🔍 Nyx OSINT - Professional Intelligence Gathering Platform.
+    r"""🔍 Nyx OSINT - Professional Intelligence Gathering Platform.
 
     \b
     Nyx is a comprehensive OSINT tool for investigating usernames, emails,
