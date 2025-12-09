@@ -3,7 +3,7 @@
 This module provides a comprehensive command-line interface for OSINT investigations,
 including username searches across 200+ platforms, email intelligence gathering,
 phone number lookups, and platform management.
-"""
+"""  # noqa: CPY001
 
 import asyncio
 import logging
@@ -12,17 +12,38 @@ import sys
 import traceback
 from datetime import datetime
 
-import click
+# Handle direct execution: when run as a script (python src/nyx/cli.py),
+# __name__ is "__main__" and relative imports will fail.
+# In this case, we need to add the src directory to sys.path for absolute imports.
+if __name__ == "__main__":
+    # Running directly as a script - add src directory (two up from this file) to sys.path if not already present
+    current_file = pathlib.Path(__file__).resolve()
+    src_dir = current_file.parents[1]  # Get src directory (parent of nyx/)
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+    # Use absolute imports when running directly
+    from nyx import __version__
+    from nyx.config.base import load_config
+    from nyx.core.logger import get_logger, setup_logging
+    from nyx.intelligence.email import EmailIntelligence
+    from nyx.intelligence.phone import PhoneIntelligence
+    from nyx.intelligence.smart import SmartSearchInput, SmartSearchService
+    from nyx.models.platform import PlatformCategory
+    from nyx.osint.platforms import get_platform_database
+    from nyx.osint.search import SearchService
+else:
+    # Running as a module (python -m nyx.cli) - use relative imports
+    from . import __version__
+    from .config.base import load_config
+    from .core.logger import get_logger, setup_logging
+    from .intelligence.email import EmailIntelligence
+    from .intelligence.phone import PhoneIntelligence
+    from .intelligence.smart import SmartSearchInput, SmartSearchService
+    from .models.platform import PlatformCategory
+    from .osint.platforms import get_platform_database
+    from .osint.search import SearchService
 
-from nyx import __version__
-from nyx.config.base import load_config
-from nyx.core.logger import get_logger, setup_logging
-from nyx.intelligence.email import EmailIntelligence
-from nyx.intelligence.phone import PhoneIntelligence
-from nyx.intelligence.smart import SmartSearchInput, SmartSearchService
-from nyx.models.platform import PlatformCategory
-from nyx.osint.platforms import get_platform_database
-from nyx.osint.search import SearchService
+import click
 
 logger = get_logger(__name__)
 
@@ -32,7 +53,7 @@ logging.getLogger("nyx.osint.search").setLevel(logging.WARNING)
 
 def _convert_config_value(value: str):
     """Convert string value to appropriate type for config.
-    
+
     Args:
         value: String value to convert
         
@@ -78,7 +99,7 @@ def _convert_config_value(value: str):
 @click.option("-d", "--debug", help="Enable debug logging", is_flag=True)
 @click.pass_context
 def cli(ctx, config, debug):
-    """🔍 Nyx OSINT - Professional Intelligence Gathering Platform.
+    r"""🔍 Nyx OSINT - Professional Intelligence Gathering Platform.
 
     \b
     Nyx is a comprehensive OSINT tool for investigating usernames, emails,
@@ -274,6 +295,135 @@ def cli(ctx, config, debug):
     help="Region code for phone number (e.g., US, GB)",
     metavar="CODE",
 )
+def _validate_search_inputs(
+    username, email, phone, whois, deep, no_nsfw, only_nsfw,
+) -> None:
+    """Validate search inputs and exit if validation fails."""
+    if not (username or email or phone or whois or deep):
+        click.echo("❌ Error: You must specify at least one search type:", err=True)
+        click.echo("  -u/--username    Search for username", err=True)
+        click.echo("  -e/--email       Investigate email", err=True)
+        click.echo("  -p/--phone       Investigate phone", err=True)
+        click.echo("  -w/--whois       Person lookup", err=True)
+        click.echo("  -d/--deep        Deep investigation", err=True)
+        click.echo("\n💡 Use 'nyx-cli search --help' for more information", err=True)
+        sys.exit(1)
+
+    if no_nsfw and only_nsfw:
+        click.echo(
+            "❌ Error: --no-nsfw and --only-nsfw are mutually exclusive",
+            err=True,
+        )
+        sys.exit(1)
+
+    if len([x for x in [username, email, phone, whois, deep] if x]) > 1:
+        click.echo("❌ Error: Specify only ONE search type at a time", err=True)
+        sys.exit(1)
+
+
+def _execute_search(
+    username,
+    email,
+    phone,
+    whois,
+    deep,
+    profiles,
+    search_by_email,
+    search_by_phone,
+    platforms,
+    category,
+    no_nsfw,
+    only_nsfw,
+    timeout,
+    output,
+    save,
+    verbose,
+    region,
+) -> None:
+    """Execute the appropriate search based on input parameters."""
+    if username:
+        _search_username(
+            username=username,
+            platforms_str=platforms,
+            categories=category,
+            exclude_nsfw=no_nsfw,
+            only_nsfw=only_nsfw,
+            timeout=timeout,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+        return
+
+    if email:
+        if search_by_email:
+            _search_profiles_by_email(
+                email=email,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_email(
+                email=email,
+                search_profiles=profiles,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        return
+
+    if phone:
+        if search_by_phone:
+            _search_profiles_by_phone(
+                phone=phone,
+                platforms_str=platforms,
+                categories=category,
+                exclude_nsfw=no_nsfw,
+                only_nsfw=only_nsfw,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        else:
+            _search_phone(
+                phone=phone,
+                region=region,
+                timeout=timeout,
+                output_format=output,
+                save_file=save,
+                verbose=verbose,
+            )
+        return
+
+    if whois:
+        _search_person(
+            name=whois,
+            state=region,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+        return
+
+    if deep:
+        _search_deep(
+            query=deep,
+            region=region,
+            timeout=timeout,
+            output_format=output,
+            save_file=save,
+            verbose=verbose,
+        )
+
+
 @click.pass_context
 def search(
     ctx,
@@ -294,7 +444,7 @@ def search(
     save,
     verbose,
     region,
-):
+) -> None:
     """🔎 Unified search command for all OSINT investigations
 
     \b
@@ -365,102 +515,26 @@ def search(
     • Platform names are case-insensitive
     • Results are sorted by platform name
     """
-    # Validation
-    if not (username or email or phone or whois or deep):
-        click.echo("❌ Error: You must specify at least one search type:", err=True)
-        click.echo("  -u/--username    Search for username", err=True)
-        click.echo("  -e/--email       Investigate email", err=True)
-        click.echo("  -p/--phone       Investigate phone", err=True)
-        click.echo("  -w/--whois       Person lookup", err=True)
-        click.echo("  -d/--deep        Deep investigation", err=True)
-        click.echo("\n💡 Use 'nyx-cli search --help' for more information", err=True)
-        sys.exit(1)
-
-    if no_nsfw and only_nsfw:
-        click.echo(
-            "❌ Error: --no-nsfw and --only-nsfw are mutually exclusive",
-            err=True,
-        )
-        sys.exit(1)
-
-    if len([x for x in [username, email, phone, whois, deep] if x]) > 1:
-        click.echo("❌ Error: Specify only ONE search type at a time", err=True)
-        sys.exit(1)
-
-    # Execute appropriate search
-    if username:
-        _search_username(
-            username=username,
-            platforms_str=platforms,
-            categories=category,
-            exclude_nsfw=no_nsfw,
-            only_nsfw=only_nsfw,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
-    elif email:
-        if search_by_email:
-            _search_profiles_by_email(
-                email=email,
-                platforms_str=platforms,
-                categories=category,
-                exclude_nsfw=no_nsfw,
-                only_nsfw=only_nsfw,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-        else:
-            _search_email(
-                email=email,
-                search_profiles=profiles,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-    elif phone:
-        if search_by_phone:
-            _search_profiles_by_phone(
-                phone=phone,
-                platforms_str=platforms,
-                categories=category,
-                exclude_nsfw=no_nsfw,
-                only_nsfw=only_nsfw,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-        else:
-            _search_phone(
-                phone=phone,
-                region=region,
-                timeout=timeout,
-                output_format=output,
-                save_file=save,
-                verbose=verbose,
-            )
-    elif whois:
-        _search_person(
-            name=whois,
-            state=region,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
-    elif deep:
-        _search_deep(
-            query=deep,
-            region=region,
-            timeout=timeout,
-            output_format=output,
-            save_file=save,
-            verbose=verbose,
-        )
+    _validate_search_inputs(username, email, phone, whois, deep, no_nsfw, only_nsfw)
+    _execute_search(
+        username,
+        email,
+        phone,
+        whois,
+        deep,
+        profiles,
+        search_by_email,
+        search_by_phone,
+        platforms,
+        category,
+        no_nsfw,
+        only_nsfw,
+        timeout,
+        output,
+        save,
+        verbose,
+        region,
+    )
 
 
 def _search_username(

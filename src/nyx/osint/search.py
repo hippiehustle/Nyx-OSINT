@@ -496,7 +496,7 @@ class SearchService:
                     search_url = platform.email_search_url.replace("{email}", normalized_email)
                 
                 # Make request
-                await self.http_client.open()
+                # Note: http_client.get() will auto-open if needed, no explicit open() required
                 response = await self.http_client.get(search_url, timeout=platform.timeout)
                 
                 if response:
@@ -586,7 +586,7 @@ class SearchService:
                             search_url = platform.phone_search_url.replace("{phone}", normalized_phone)
                         
                         # Make request
-                        await self.http_client.open()
+                        # Note: http_client.get() will auto-open if needed, no explicit open() required
                         response = await self.http_client.get(search_url, timeout=platform.timeout)
                         
                         if response:

@@ -385,7 +385,7 @@ class PhoneIntelligence:
                     url = f"https://www.truepeoplesearch.com/result?phoneno={clean_phone}"
                     
                     headers = {"User-Agent": self.user_agent}
-                    await self.http_client.open()
+                    # Note: http_client.get() will auto-open if needed, no explicit open() required
                     response = await self.http_client.get(url, headers=headers, timeout=15)
                     
                     if response and response.status_code == 200:
@@ -436,7 +436,7 @@ class PhoneIntelligence:
                     url = f"https://www.fastpeoplesearch.com/phone/{clean_phone}"
                     
                     headers = {"User-Agent": self.user_agent}
-                    await self.http_client.open()
+                    # Note: http_client.get() will auto-open if needed, no explicit open() required
                     response = await self.http_client.get(url, headers=headers, timeout=15)
                     
                     if response and response.status_code == 200:
